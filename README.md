@@ -109,7 +109,9 @@ From a full notebook run — every test green, then the timing sweep (values rea
 | 2048 | ~12 ms | ~38 ms | ~11 ms |
 | 4096 | ~47 ms | ~150 ms | ~44 ms |
 
-Two honest readings. The hand-written kernel **tracks SDPA to within a few percent at N ≥ 2048** — for a correctness-first fp32 kernel against torch's optimized backend, that says the IO structure is doing exactly what the paper promises (at fp32 on sm_75 both are bound by the same HBM streams; there's no tensor-core rabbit to pull out of the hat). The Triton rendering sits ~3× back: block sizes are untuned, `tl.dot` runs in strict IEEE mode by choice, and the per-tile `p` matrix costs registers the CUDA kernel never spends — all knobs, none mysteries.
+Called plainly: **SDPA wins at every length** — 1.8× at N=512, narrowing to ~7% at N=4096. Context that matters when reading that: on a T4 at fp32, SDPA can't use its flash backend (sm80+, fp16/bf16) — it dispatches to the **memory-efficient backend, which is itself a flash-style IO-aware kernel** with years of engineering behind it (vectorized loads, multiple rows per thread, warp-level reductions). So this table is two implementations of the same algorithm family, one written for readability, one for production; closing to ~7% at long N is the encouraging part, and the 1.8× at short N is our kernel's real weakness (128-register threads cap occupancy; one query row per thread leaves latency exposed on small grids). The Triton rendering sits ~3× back on untuned block sizes and strict-IEEE dots.
+
+The comparison the paper actually makes — against **standard attention that materializes the N×N matrix in HBM** — is the one where the algorithm shows up: the notebook's final cell includes that baseline (at N=4096 and this shape it burns gigabytes on intermediates torch never keeps). That's the gap FlashAttention exists to open; the gap to SDPA's kernel is engineering headroom, listed in the roadmap.
 
 ## Build & run
 
@@ -148,6 +150,7 @@ triton/
 
 - [x] Run the numbers on real hardware — Colab T4 table above, via the notebook
 - [ ] Backward pass — recompute `P` from `O` + logsumexp per the paper's Appendix B, then a real autograd.Function
+- [ ] Close the gap to SDPA's mem-efficient kernel: >1 query row per thread, vectorized (float4) loads, occupancy/register tuning — the N=512 1.8× is the target
 - [ ] Block size tuning (CUDA and the Triton ~3× gap — config, not concept) + head dim 128
 - [ ] fp16/bf16 with tensor-core matmuls on Ampere+ (the fp32 kernel is the correctness baseline; fp32 is also all a T4 can show)
 - [ ] Block-sparse variant (Section 3.3)
