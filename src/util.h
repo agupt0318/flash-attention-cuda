@@ -1,0 +1,58 @@
+// Shared helpers for the tests and benchmarks: deterministic fills,
+// error metrics, and the attention problem shape. Tensors are plain
+// float buffers, [batch, heads, seq, head_dim] contiguous.
+#pragma once
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+struct Shape {
+    int batch, heads, seq, d;
+    size_t elems() const
+    {
+        return (size_t)batch * heads * seq * d;
+    }
+    // flat index of row t of head (b,h)
+    size_t row(int b, int h, int t) const
+    {
+        return (((size_t)b * heads + h) * seq + t) * d;
+    }
+};
+
+// xorshift64* — deterministic across platforms, unlike rand()
+inline float rand_float(uint64_t &state)
+{
+    state ^= state >> 12;
+    state ^= state << 25;
+    state ^= state >> 27;
+    uint64_t r = state * 0x2545F4914F6CDD1DULL;
+    // uniform in [-1, 1): plenty of dynamic range for softmax stress
+    return (float)((r >> 40) / 8388608.0 * 2.0 - 1.0);
+}
+
+inline void fill_random(std::vector<float> &v, uint64_t seed)
+{
+    uint64_t s = seed ? seed : 1;
+    for (auto &x : v)
+        x = rand_float(s);
+}
+
+// max |a-b| and max |a-b|/(|b|+eps) over the buffer
+struct Error {
+    double abs, rel;
+};
+
+inline Error max_error(const std::vector<float> &a, const std::vector<float> &b)
+{
+    Error e{0, 0};
+    for (size_t i = 0; i < a.size(); i++) {
+        double d = std::fabs((double)a[i] - b[i]);
+        if (d > e.abs)
+            e.abs = d;
+        double r = d / (std::fabs((double)b[i]) + 1e-8);
+        if (r > e.rel)
+            e.rel = r;
+    }
+    return e;
+}
