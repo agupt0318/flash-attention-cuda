@@ -6,6 +6,10 @@
 ![cuda](https://img.shields.io/badge/CUDA-fp32%20forward-76b900)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 
+<p align="center">
+  <img src="assets/tiling.svg" width="880" alt="Animated view of the kernel: a query tile pinned in registers while K/V tiles stream through SRAM; the online-softmax statistics update and the output sharpens tile by tile">
+</p>
+
 ## The idea
 
 Attention is `O = softmax(QKᵀ/√d)·V`. The standard implementation writes the N×N matrices `S` and `P` to GPU HBM and reads them back — at N=4K that's gigabytes of traffic per head-batch for intermediates nobody keeps. Most of "attention is slow" is that traffic: the operation is memory-bound, and HBM is an order of magnitude slower than on-chip SRAM.
@@ -30,6 +34,14 @@ so the output row is just `acc/ℓ` after the last tile — exact, not approxima
 - **Causal masking** costs what it saves: tiles past a CTA's last row are never loaded, and each row breaks out of the key stream at the diagonal.
 - **Logsumexp per row** is written out — the statistic the backward pass recomputes `P` from, so the forward is already backward-shaped.
 
+## Watch the recurrence work
+
+One query row streaming through K/V tiles — the green window is the tile currently in SRAM. The weights renormalize as the running max updates, and the output snaps to **exact** (‖error‖ ≈ 1e-7) the moment the last key folds in. No approximation anywhere; the animation is generated from the same recurrence the kernel runs ([tools/make_convergence_gif.py](tools/make_convergence_gif.py), deterministic).
+
+<p align="center">
+  <img src="assets/convergence.gif" width="640" alt="Attention weights revealed tile by tile, with the max-norm error against exact attention dropping to 1e-7 at the end of the stream">
+</p>
+
 ## Correctness without owning a GPU
 
 This was built on a machine with no NVIDIA hardware, so correctness is layered:
@@ -39,6 +51,10 @@ This was built on a machine with no NVIDIA hardware, so correctness is layered:
 3. [src/flash_fwd.cu](src/flash_fwd.cu) mirrors the validated recurrence; CI compiles it with nvcc on every push, and [tests/test_gpu.cu](tests/test_gpu.cu) checks it against the reference at 5e-5 on real hardware (`make test-gpu`).
 
 The algorithm's math never had to be debugged through a device boundary — by the time CUDA entered, only CUDA could be wrong.
+
+<p align="center">
+  <img src="assets/tests.svg" width="740" alt="Animated terminal: make test running the tiled algorithm against the naive reference across ten shapes, all passing at ~1e-6">
+</p>
 
 ## Build & run
 
