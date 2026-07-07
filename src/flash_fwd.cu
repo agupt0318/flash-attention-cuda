@@ -25,8 +25,8 @@ __global__ void flash_fwd_kernel(const float *__restrict__ Q,
                                  float *__restrict__ lse, int seq,
                                  float scale, int causal)
 {
-    __shared__ float Ks[BLOCK_N][HEAD_DIM];
-    __shared__ float Vs[BLOCK_N][HEAD_DIM];
+    __shared__ __align__(16) float Ks[BLOCK_N][HEAD_DIM];
+    __shared__ __align__(16) float Vs[BLOCK_N][HEAD_DIM];
 
     const int q0 = blockIdx.x * BLOCK_M;
     const int t = q0 + threadIdx.x;             // this thread's query row
@@ -48,11 +48,21 @@ __global__ void flash_fwd_kernel(const float *__restrict__ Q,
     for (int j0 = 0; j0 < kv_end; j0 += BLOCK_N) {
         const int jn = min(BLOCK_N, seq - j0);
 
-        for (int i = threadIdx.x; i < jn * HEAD_DIM; i += blockDim.x) {
-            Ks[i / HEAD_DIM][i % HEAD_DIM] =
-                K[base + (size_t)j0 * HEAD_DIM + i];
-            Vs[i / HEAD_DIM][i % HEAD_DIM] =
-                V[base + (size_t)j0 * HEAD_DIM + i];
+        // float4-wide cooperative load: rows are 128/256 B so tiles are
+        // 16 B-aligned end to end; 4x fewer load instructions than the
+        // scalar loop and the same coalescing.
+        {
+            const float4 *K4 = (const float4 *)(K + base +
+                                                (size_t)j0 * HEAD_DIM);
+            const float4 *V4 = (const float4 *)(V + base +
+                                                (size_t)j0 * HEAD_DIM);
+            float4 *Ks4 = (float4 *)&Ks[0][0];
+            float4 *Vs4 = (float4 *)&Vs[0][0];
+            for (int i = threadIdx.x; i < jn * HEAD_DIM / 4;
+                 i += blockDim.x) {
+                Ks4[i] = K4[i];
+                Vs4[i] = V4[i];
+            }
         }
         __syncthreads();
 
