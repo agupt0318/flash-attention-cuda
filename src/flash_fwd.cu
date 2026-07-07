@@ -93,21 +93,24 @@ __global__ void flash_fwd_kernel(const float *__restrict__ Q,
     }
 }
 
+// stream: where to enqueue the launch — callers embedded in a runtime
+// (e.g. the PyTorch binding) pass their current stream so ordering with
+// surrounding ops holds; standalone callers let it default to stream 0.
 void flash_forward(int batch, int heads, int seq, int d, const float *Q,
                    const float *K, const float *V, bool causal, float *O,
-                   float *lse)
+                   float *lse, cudaStream_t stream)
 {
     dim3 grid((seq + BLOCK_M - 1) / BLOCK_M, batch * heads);
     const float scale = 1.0f / sqrtf((float)d);
 
     switch (d) {
     case 32:
-        flash_fwd_kernel<32><<<grid, BLOCK_M>>>(Q, K, V, O, lse, seq,
-                                                scale, causal);
+        flash_fwd_kernel<32><<<grid, BLOCK_M, 0, stream>>>(Q, K, V, O, lse,
+                                                           seq, scale, causal);
         break;
     case 64:
-        flash_fwd_kernel<64><<<grid, BLOCK_M>>>(Q, K, V, O, lse, seq,
-                                                scale, causal);
+        flash_fwd_kernel<64><<<grid, BLOCK_M, 0, stream>>>(Q, K, V, O, lse,
+                                                           seq, scale, causal);
         break;
     default:
         fprintf(stderr, "flash_forward: unsupported head dim %d\n", d);

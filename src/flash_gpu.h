@@ -18,4 +18,4 @@
 
 void flash_forward(int batch, int heads, int seq, int d, const float *Q,
                    const float *K, const float *V, bool causal, float *O,
-                   float *lse);
+                   float *lse, cudaStream_t stream = nullptr);
