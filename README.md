@@ -5,6 +5,7 @@
 ![ci](https://github.com/agupt0318/flash-attention-cuda/actions/workflows/ci.yml/badge.svg)
 ![cuda](https://img.shields.io/badge/CUDA-fp32%20forward-76b900)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/agupt0318/flash-attention-cuda/blob/main/demo/flash_attention_colab.ipynb)
 
 <p align="center">
   <img src="assets/tiling.svg" width="880" alt="Animated view of the kernel: a query tile pinned in registers while K/V tiles stream through SRAM; the online-softmax statistics update and the output sharpens tile by tile">
@@ -31,7 +32,12 @@ so the output row is just `acc/ℓ` after the last tile — exact, not approxima
 - **Grid**: one CTA per (query tile, batch·head); one thread per query row. The row's `q`, running `m`/`ℓ`, and unnormalized accumulator live in **registers** for the entire pass — the only HBM writes are the final `O` row and the logsumexp.
 - **K/V stream through shared memory** in 64-row tiles, loaded cooperatively by the whole CTA. Score matrix rows exist one register at a time.
 - **Softmax statistics** update per-key (Algorithm 1 with `Bc=1` for the stats; the IO tiling is the paper's) — a fresh max rescales history by `e^(m−m')` before the key folds in.
-- **Causal masking** costs what it saves: tiles past a CTA's last row are never loaded, and each row breaks out of the key stream at the diagonal.
+- **Causal masking** costs what it saves: tiles past a CTA's last row are never loaded, and each row breaks out of the key stream at the diagonal. Watching the loads is the clearest way to see it — green tiles stream in full, amber diagonal tiles stream and get masked per-row, dark ones never leave HBM:
+
+<p align="center">
+  <img src="assets/causal_tiles.gif" width="640" alt="Animated map of which K/V tiles each query tile loads under causal masking — roughly half never leave HBM">
+</p>
+
 - **Logsumexp per row** is written out — the statistic the backward pass recomputes `P` from, so the forward is already backward-shaped.
 
 ## Watch the recurrence work
@@ -81,6 +87,16 @@ Section 5 of the paper points at its own biggest limitation — every attention 
 | lines of kernel | ~120 | ~70 |
 
 Same contract, same float64 judge: `python3 triton/test_parity.py` checks the Triton kernel — and the CUDA one alongside, when its extension is importable — against the exact reference on the usual hostile shapes. `allow_tf32` is off so the tolerances mean something; it's the first knob to flip when chasing speed instead of digits.
+
+The four phases of the recurrence, highlighted in both languages at once — the left pane spends its time on loads, barriers, and register loops; the right pane's equivalent is a masked `tl.load` and a `tl.dot`:
+
+<p align="center">
+  <img src="assets/cuda_vs_triton.svg" width="880" alt="Animated side-by-side of the CUDA and Triton kernels: stream the tile, score it, rescale history, fold it in — matching lines highlighted in sync">
+</p>
+
+## Try it on a free GPU
+
+Everything this repo can only promise from a GPU-less laptop, verified in one click: [the Colab notebook](https://colab.research.google.com/github/agupt0318/flash-attention-cuda/blob/main/demo/flash_attention_colab.ipynb) clones the repo on a free T4, runs the CPU suite, compiles and checks the CUDA kernel for whatever GPU it lands on, runs both parity suites, and ends with a CUDA-vs-Triton-vs-SDPA timing plot.
 
 ## Build & run
 
