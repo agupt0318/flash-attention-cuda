@@ -69,6 +69,19 @@ o = flash_attention(q, k, v, causal=True)   # [batch, heads, seq, head_dim] fp32
 
 The extension JIT-compiles on first import (needs `nvcc` and a CUDA build of torch — nothing to install), launches on torch's current stream, and validates its whole contract up front. `python3 pytorch/test_parity.py` checks it against a **float64** reference with SDPA alongside as the sanity anchor; add `bench` for a timing table vs SDPA. Inference-only until the backward kernel lands.
 
+## The paper's future work, answered: Triton
+
+Section 5 of the paper points at its own biggest limitation — every attention variant needs a new hand-written CUDA kernel, tied to an architecture, and calls for *"writing attention algorithms in a high-level language … and compiling to IO-aware implementations in CUDA — similar to efforts such as Halide."* That compiler now exists in the ecosystem: **Triton**. [triton/flash_attn_triton.py](triton/flash_attn_triton.py) is the same forward pass through it, so this repo holds both sides of the abstraction argument:
+
+| | [src/flash_fwd.cu](src/flash_fwd.cu) (hand CUDA) | [triton/flash_attn_triton.py](triton/flash_attn_triton.py) (compiled) |
+|---|---|---|
+| softmax stats | per-key, in registers | per-tile (`Algorithm 1` verbatim), `tl.dot` matmuls |
+| scheduling | explicit — smem tiles, `__syncthreads`, cooperative loads | the compiler's problem |
+| portability | `-arch=sm_XX` | retune two block sizes |
+| lines of kernel | ~120 | ~70 |
+
+Same contract, same float64 judge: `python3 triton/test_parity.py` checks the Triton kernel — and the CUDA one alongside, when its extension is importable — against the exact reference on the usual hostile shapes. `allow_tf32` is off so the tolerances mean something; it's the first knob to flip when chasing speed instead of digits.
+
 ## Build & run
 
 ```sh
@@ -97,11 +110,14 @@ pytorch/
   binding.cpp     torch extension: contract checks + current-stream launch
   flash_attn.py   JIT front door — flash_attention(q, k, v, causal)
   test_parity.py  vs float64 reference, SDPA as sanity anchor (+ bench)
+triton/
+  flash_attn_triton.py  the same algorithm through a compiler
+  test_parity.py        three implementations, one float64 judge
 ```
 
 ## Roadmap
 
-- [ ] Run the numbers on real hardware (A100/4090) and publish them here — including `pytorch/test_parity.py bench` vs SDPA
+- [ ] Run the numbers on real hardware (A100/4090) and publish them here — CUDA vs Triton vs SDPA in one table
 - [ ] Backward pass — recompute `P` from `O` + logsumexp per the paper's Appendix B, then a real autograd.Function
 - [ ] fp16/bf16 with tensor-core matmuls (the fp32 kernel is the correctness baseline)
 - [ ] Block size tuning + head dim 128
