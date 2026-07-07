@@ -19,3 +19,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends nvidia-cuda-toolkit
       - name: compile kernels + drivers (no GPU needed)
         run: make cuda
+      - name: dump SASS + ptxas stats for offline analysis
+        run: make sass
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flash-fwd-sass
+          path: build/flash_fwd.sass

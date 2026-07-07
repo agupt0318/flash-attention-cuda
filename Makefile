@@ -8,8 +8,10 @@ ARCH     ?= sm_70
 BUILD    := build
 
 CXXFLAGS  := -std=c++17 -O2 -Wall -Wextra -Isrc -MMD -MP
+# -Xptxas=-v prints per-kernel register counts and spill bytes at
+# compile time — the first thing to read when performance is flat.
 NVCCFLAGS := -std=c++17 -O3 -arch=$(ARCH) -Isrc -lineinfo \
-             --compiler-options -Wall,-Wextra
+             -Xptxas=-v --compiler-options -Wall,-Wextra
 
 $(BUILD):
 	mkdir -p $@
@@ -42,6 +44,12 @@ $(BUILD)/bench: $(BUILD)/bench.cu.o $(BUILD)/flash_fwd.cu.o
 
 cuda: $(BUILD)/test_gpu $(BUILD)/bench      # compile without running (CI)
 
+# What is the machine actually running? SASS of the kernel, for reading
+# on machines that can compile but not execute (CI, this laptop).
+sass: $(BUILD)/flash_fwd.cu.o
+	cuobjdump -sass $< > $(BUILD)/flash_fwd.sass
+	@grep -cE '^\s+/' $(BUILD)/flash_fwd.sass | xargs echo "instructions:"
+
 test-gpu: $(BUILD)/test_gpu
 	$(BUILD)/test_gpu
 
@@ -52,4 +60,4 @@ clean:
 	rm -rf $(BUILD)
 
 -include $(BUILD)/*.d
-.PHONY: test cuda test-gpu bench clean
+.PHONY: test cuda sass test-gpu bench clean
