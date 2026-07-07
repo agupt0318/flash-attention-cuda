@@ -56,6 +56,19 @@ The algorithm's math never had to be debugged through a device boundary — by t
   <img src="assets/tests.svg" width="740" alt="Animated terminal: make test running the tiled algorithm against the naive reference across ten shapes, all passing at ~1e-6">
 </p>
 
+## PyTorch
+
+The kernel is a drop-in op — same layout contract as `scaled_dot_product_attention` with explicit heads:
+
+```python
+import sys; sys.path.insert(0, "pytorch")
+from flash_attn import flash_attention
+
+o = flash_attention(q, k, v, causal=True)   # [batch, heads, seq, head_dim] fp32 CUDA
+```
+
+The extension JIT-compiles on first import (needs `nvcc` and a CUDA build of torch — nothing to install), launches on torch's current stream, and validates its whole contract up front. `python3 pytorch/test_parity.py` checks it against a **float64** reference with SDPA alongside as the sanity anchor; add `bench` for a timing table vs SDPA. Inference-only until the backward kernel lands.
+
 ## Build & run
 
 ```sh
@@ -80,12 +93,16 @@ src/
 tests/
   test_cpu.cpp    tiled vs reference, shapes chosen to hurt
   test_gpu.cu     kernel vs reference, same shapes + N=1024
+pytorch/
+  binding.cpp     torch extension: contract checks + current-stream launch
+  flash_attn.py   JIT front door — flash_attention(q, k, v, causal)
+  test_parity.py  vs float64 reference, SDPA as sanity anchor (+ bench)
 ```
 
 ## Roadmap
 
-- [ ] Run the numbers on real hardware (A100/4090) and publish them here
-- [ ] Backward pass — recompute `P` from `O` + logsumexp per the paper's Appendix B
+- [ ] Run the numbers on real hardware (A100/4090) and publish them here — including `pytorch/test_parity.py bench` vs SDPA
+- [ ] Backward pass — recompute `P` from `O` + logsumexp per the paper's Appendix B, then a real autograd.Function
 - [ ] fp16/bf16 with tensor-core matmuls (the fp32 kernel is the correctness baseline)
 - [ ] Block size tuning + head dim 128
 - [ ] Block-sparse variant (Section 3.3)
