@@ -70,17 +70,20 @@ __global__ void flash_fwd_kernel(const float *__restrict__ Q,
             for (int j = 0; j < jn; j++) {
                 if (causal && j0 + j > t)
                     break;                      // keys are ordered: done
-                // Four independent partial sums: a single accumulator
-                // makes the dot a serial chain of dependent FMAs (~4
-                // cycles each on Turing), and nvcc won't reassociate
-                // floats on its own — the chain gates the whole kernel.
+                // Two things at once here: four independent partial
+                // sums (a single accumulator is a serial FMA chain nvcc
+                // won't reassociate), and float4 smem reads — a 4-byte
+                // LDS per FMA caps the math pipes at the shared-memory
+                // issue rate; one LDS.128 feeds four FMAs instead.
+                const float4 *k4 = (const float4 *)Ks[j];
                 float s0 = 0.0f, s1 = 0.0f, s2 = 0.0f, s3 = 0.0f;
 #pragma unroll
-                for (int c = 0; c < HEAD_DIM; c += 4) {
-                    s0 += q[c + 0] * Ks[j][c + 0];
-                    s1 += q[c + 1] * Ks[j][c + 1];
-                    s2 += q[c + 2] * Ks[j][c + 2];
-                    s3 += q[c + 3] * Ks[j][c + 3];
+                for (int c = 0; c < HEAD_DIM / 4; c++) {
+                    const float4 kk = k4[c];
+                    s0 += q[4 * c + 0] * kk.x;
+                    s1 += q[4 * c + 1] * kk.y;
+                    s2 += q[4 * c + 2] * kk.z;
+                    s3 += q[4 * c + 3] * kk.w;
                 }
                 float s = ((s0 + s1) + (s2 + s3)) * scale;
 
@@ -94,9 +97,15 @@ __global__ void flash_fwd_kernel(const float *__restrict__ Q,
                 }
                 const float e = __expf(s - m);
                 l += e;
+                const float4 *v4 = (const float4 *)Vs[j];
 #pragma unroll
-                for (int c = 0; c < HEAD_DIM; c++)
-                    acc[c] += e * Vs[j][c];
+                for (int c = 0; c < HEAD_DIM / 4; c++) {
+                    const float4 vv = v4[c];
+                    acc[4 * c + 0] += e * vv.x;
+                    acc[4 * c + 1] += e * vv.y;
+                    acc[4 * c + 2] += e * vv.z;
+                    acc[4 * c + 3] += e * vv.w;
+                }
             }
         }
         __syncthreads();
