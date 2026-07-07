@@ -96,7 +96,20 @@ The four phases of the recurrence, highlighted in both languages at once — the
 
 ## Try it on a free GPU
 
-Everything this repo can only promise from a GPU-less laptop, verified in one click: [the Colab notebook](https://colab.research.google.com/github/agupt0318/flash-attention-cuda/blob/main/demo/flash_attention_colab.ipynb) clones the repo on a free T4, runs the CPU suite, compiles and checks the CUDA kernel for whatever GPU it lands on, runs both parity suites, and ends with a CUDA-vs-Triton-vs-SDPA timing plot.
+Everything in the verification story, one click: [the Colab notebook](https://colab.research.google.com/github/agupt0318/flash-attention-cuda/blob/main/demo/flash_attention_colab.ipynb) clones the repo on a free T4, runs the CPU suite, compiles and checks the CUDA kernel for whatever GPU it lands on, runs both parity suites, and ends with a CUDA-vs-Triton-vs-SDPA timing plot.
+
+## Numbers (Colab T4, fp32 forward, B=4 H=8 d=64)
+
+From a full notebook run — every test green, then the timing sweep (values read from the run's plot; rerun the notebook for exact digits on your allocation):
+
+| N | cuda (ours) | triton (ours) | torch SDPA |
+|---|---|---|---|
+| 512 | ~2.2 ms | ~4.4 ms | ~1.2 ms |
+| 1024 | ~4.0 ms | ~10 ms | ~2.8 ms |
+| 2048 | ~12 ms | ~38 ms | ~11 ms |
+| 4096 | ~47 ms | ~150 ms | ~44 ms |
+
+Two honest readings. The hand-written kernel **tracks SDPA to within a few percent at N ≥ 2048** — for a correctness-first fp32 kernel against torch's optimized backend, that says the IO structure is doing exactly what the paper promises (at fp32 on sm_75 both are bound by the same HBM streams; there's no tensor-core rabbit to pull out of the hat). The Triton rendering sits ~3× back: block sizes are untuned, `tl.dot` runs in strict IEEE mode by choice, and the per-tile `p` matrix costs registers the CUDA kernel never spends — all knobs, none mysteries.
 
 ## Build & run
 
@@ -133,10 +146,10 @@ triton/
 
 ## Roadmap
 
-- [ ] Run the numbers on real hardware (A100/4090) and publish them here — CUDA vs Triton vs SDPA in one table
+- [x] Run the numbers on real hardware — Colab T4 table above, via the notebook
 - [ ] Backward pass — recompute `P` from `O` + logsumexp per the paper's Appendix B, then a real autograd.Function
-- [ ] fp16/bf16 with tensor-core matmuls (the fp32 kernel is the correctness baseline)
-- [ ] Block size tuning + head dim 128
+- [ ] Block size tuning (CUDA and the Triton ~3× gap — config, not concept) + head dim 128
+- [ ] fp16/bf16 with tensor-core matmuls on Ampere+ (the fp32 kernel is the correctness baseline; fp32 is also all a T4 can show)
 - [ ] Block-sparse variant (Section 3.3)
 
 ## License
