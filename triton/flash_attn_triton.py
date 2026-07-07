@@ -23,6 +23,20 @@ import triton
 import triton.language as tl
 
 
+# Let the compiler search the schedule space — the whole point of the
+# high-level rendering. Tuning runs once per (seq_len, head_dim, mask).
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_warps=4),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 64}, num_warps=4),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 64}, num_warps=8),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_warps=4),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 32}, num_warps=8),
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_warps=4,
+                      num_stages=2),
+    ],
+    key=["seq_len", "HEAD_DIM", "CAUSAL"],
+)
 @triton.jit
 def _fwd_kernel(Q, K, V, O, Lse, seq_len, scale,
                 BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
@@ -77,8 +91,7 @@ def _fwd_kernel(Q, K, V, O, Lse, seq_len, scale,
 
 
 def flash_attention_triton(q: torch.Tensor, k: torch.Tensor,
-                           v: torch.Tensor, causal: bool = False,
-                           block_m: int = 64, block_n: int = 64):
+                           v: torch.Tensor, causal: bool = False):
     """softmax(q·kᵀ/√d)·v, tiled through SRAM by the Triton compiler."""
     assert q.is_cuda and q.dtype == torch.float32, "fp32 CUDA tensors"
     assert q.dim() == 4 and q.shape == k.shape == v.shape
@@ -89,10 +102,9 @@ def flash_attention_triton(q: torch.Tensor, k: torch.Tensor,
     o = torch.empty_like(q)
     lse = torch.empty(b, h, n, device=q.device, dtype=torch.float32)
 
-    grid = (triton.cdiv(n, block_m), b * h)
+    grid = lambda meta: (triton.cdiv(n, meta["BLOCK_M"]), b * h)
     _fwd_kernel[grid](q, k, v, o, lse, n, 1.0 / d ** 0.5,
-                      BLOCK_M=block_m, BLOCK_N=block_n, HEAD_DIM=d,
-                      CAUSAL=causal)
+                      HEAD_DIM=d, CAUSAL=causal)
     return o
 
 
