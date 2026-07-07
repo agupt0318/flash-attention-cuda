@@ -17,13 +17,17 @@
 #define BLOCK_M 128     // query rows per CTA == threads per CTA
 #define BLOCK_N 64      // K/V rows staged in shared memory at a time
 
-template <int HEAD_DIM>
+// CAUSAL is a template parameter for the same reason HEAD_DIM is: as a
+// runtime value it put a branch (and a loop-carried break) in every key
+// iteration of every run — convergence bookkeeping per key, and no
+// unrolling. As a constant, the non-causal loop body is branch-free.
+template <int HEAD_DIM, bool CAUSAL>
 __global__ void flash_fwd_kernel(const float *__restrict__ Q,
                                  const float *__restrict__ K,
                                  const float *__restrict__ V,
                                  float *__restrict__ O,
                                  float *__restrict__ lse, int seq,
-                                 float scale, int causal)
+                                 float scale)
 {
     __shared__ __align__(16) float Ks[BLOCK_N][HEAD_DIM];
     __shared__ __align__(16) float Vs[BLOCK_N][HEAD_DIM];
@@ -44,7 +48,7 @@ __global__ void flash_fwd_kernel(const float *__restrict__ Q,
     }
 
     // causal: no key tile past this CTA's last query row is ever needed
-    const int kv_end = causal ? min(seq, q0 + BLOCK_M) : seq;
+    const int kv_end = CAUSAL ? min(seq, q0 + BLOCK_M) : seq;
     for (int j0 = 0; j0 < kv_end; j0 += BLOCK_N) {
         const int jn = min(BLOCK_N, seq - j0);
 
@@ -67,9 +71,9 @@ __global__ void flash_fwd_kernel(const float *__restrict__ Q,
         __syncthreads();
 
         if (live) {
-            for (int j = 0; j < jn; j++) {
-                if (causal && j0 + j > t)
-                    break;                      // keys are ordered: done
+            const int jend = CAUSAL ? min(jn, t - j0 + 1) : jn;
+#pragma unroll 4
+            for (int j = 0; j < jend; j++) {
                 // Two things at once here: four independent partial
                 // sums (a single accumulator is a serial FMA chain nvcc
                 // won't reassociate), and float4 smem reads — a 4-byte
@@ -112,12 +116,28 @@ __global__ void flash_fwd_kernel(const float *__restrict__ Q,
     }
 
     if (live) {
+        // one real division; 64 of them compiled to an IEEE slow-path
+        // CALL apiece (MUFU.RCP + FCHK in the SASS)
+        const float inv_l = 1.0f / l;
 #pragma unroll
         for (int c = 0; c < HEAD_DIM; c++)
-            O[base + (size_t)t * HEAD_DIM + c] = acc[c] / l;
+            O[base + (size_t)t * HEAD_DIM + c] = acc[c] * inv_l;
         if (lse)
             lse[(size_t)blockIdx.y * seq + t] = m + logf(l);
     }
+}
+
+template <int HEAD_DIM>
+static void launch(dim3 grid, cudaStream_t stream, const float *Q,
+                   const float *K, const float *V, bool causal, float *O,
+                   float *lse, int seq, float scale)
+{
+    if (causal)
+        flash_fwd_kernel<HEAD_DIM, true><<<grid, BLOCK_M, 0, stream>>>(
+            Q, K, V, O, lse, seq, scale);
+    else
+        flash_fwd_kernel<HEAD_DIM, false><<<grid, BLOCK_M, 0, stream>>>(
+            Q, K, V, O, lse, seq, scale);
 }
 
 // stream: where to enqueue the launch — callers embedded in a runtime
@@ -132,12 +152,10 @@ void flash_forward(int batch, int heads, int seq, int d, const float *Q,
 
     switch (d) {
     case 32:
-        flash_fwd_kernel<32><<<grid, BLOCK_M, 0, stream>>>(Q, K, V, O, lse,
-                                                           seq, scale, causal);
+        launch<32>(grid, stream, Q, K, V, causal, O, lse, seq, scale);
         break;
     case 64:
-        flash_fwd_kernel<64><<<grid, BLOCK_M, 0, stream>>>(Q, K, V, O, lse,
-                                                           seq, scale, causal);
+        launch<64>(grid, stream, Q, K, V, causal, O, lse, seq, scale);
         break;
     default:
         fprintf(stderr, "flash_forward: unsupported head dim %d\n", d);
