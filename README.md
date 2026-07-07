@@ -100,18 +100,21 @@ Everything in the verification story, one click: [the Colab notebook](https://co
 
 ## Numbers (Colab T4, fp32 forward, B=4 H=8 d=64)
 
-From a full notebook run — every test green, then the timing sweep (values read from the run's plot; rerun the notebook for exact digits on your allocation):
+From a full notebook run — every test green, then the timing sweep:
 
-| N | cuda (ours) | triton (ours) | torch SDPA |
-|---|---|---|---|
-| 512 | ~2.2 ms | ~4.4 ms | ~1.2 ms |
-| 1024 | ~4.0 ms | ~10 ms | ~2.8 ms |
-| 2048 | ~12 ms | ~38 ms | ~11 ms |
-| 4096 | ~47 ms | ~150 ms | ~44 ms |
+| N | cuda (ours) | triton (ours) | torch SDPA | naive (N² in HBM) | naive peak mem |
+|---|---|---|---|---|---|
+| 512 | 2.115 ms | 4.406 ms | 1.610 ms | **1.121 ms** | 0.09 GiB |
+| 1024 | 3.363 ms | 8.646 ms | 2.770 ms | 4.705 ms | 0.29 GiB |
+| 2048 | 12.592 ms | 34.036 ms | 11.335 ms | 19.201 ms | 1.07 GiB |
+| 4096 | 47.714 ms | 135.868 ms | 45.492 ms | 83.251 ms | **4.13 GiB** |
 
-Called plainly: **SDPA wins at every length** — 1.8× at N=512, narrowing to ~7% at N=4096. Context that matters when reading that: on a T4 at fp32, SDPA can't use its flash backend (sm80+, fp16/bf16) — it dispatches to the **memory-efficient backend, which is itself a flash-style IO-aware kernel** with years of engineering behind it (vectorized loads, multiple rows per thread, warp-level reductions). So this table is two implementations of the same algorithm family, one written for readability, one for production; closing to ~7% at long N is the encouraging part, and the 1.8× at short N is our kernel's real weakness (128-register threads cap occupancy; one query row per thread leaves latency exposed on small grids). The Triton rendering sits ~3× back on untuned block sizes and strict-IEEE dots.
+(flash-family peak mem is 0.02–0.13 GiB — the inputs and output, nothing else.)
 
-The comparison the paper actually makes — against **standard attention that materializes the N×N matrix in HBM** — is the one where the algorithm shows up: the notebook's final cell includes that baseline (at N=4096 and this shape it burns gigabytes on intermediates torch never keeps). That's the gap FlashAttention exists to open; the gap to SDPA's kernel is engineering headroom, listed in the roadmap.
+Reading it honestly, in both directions:
+
+- **The algorithm's claim reproduces.** Naive attention — cuBLAS matmuls plus a materialized softmax — *wins below N≈1024*: its matmuls are perfect and the score matrix still fits in cache. That crossover is in the paper. Past it, N² physics takes over: at N=4096 flash is **1.75× faster and uses 32× less memory**, and the naive curve is on its way to an OOM no tiled implementation will ever meet.
+- **SDPA still beats our kernel at every length** — 1.3× at N=512, ~5% at N=4096. Context: at fp32 on a T4, SDPA dispatches to its memory-efficient backend — itself a flash-style IO-aware kernel with years of tuning — so this is a loss to a production sibling, not to the algorithm's opponent. The gap is being worked: an ILP round (independent partial sums in the dot) bought 16% at N=1024 and nothing at N=4096, which killed the latency-bound hypothesis and pointed at **shared-memory issue rate** — one 4-byte `LDS` per FMA caps the math pipes. `float4` smem reads are the current attempt. The Triton rendering trails ~3× on strict-IEEE dots; autotuning recovered ~10%.
 
 ## Build & run
 
