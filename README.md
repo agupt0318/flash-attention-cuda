@@ -73,7 +73,7 @@ from flash_attn import flash_attention
 o = flash_attention(q, k, v, causal=True)   # [batch, heads, seq, head_dim] fp32 CUDA
 ```
 
-The extension JIT-compiles on first import (needs `nvcc` and a CUDA build of torch — nothing to install), launches on torch's current stream, and validates its whole contract up front. `python3 pytorch/test_parity.py` checks it against a **float64** reference with SDPA alongside as the sanity anchor; add `bench` for a timing table vs SDPA. Inference-only until the backward kernel lands.
+The extension JIT-compiles on first import (needs `nvcc`, a CUDA build of torch, and `pip install ninja` — torch's extension builder requires it), launches on torch's current stream, and validates its whole contract up front. `python3 pytorch/test_parity.py` checks it against a **float64** reference with SDPA alongside as the sanity anchor; add `bench` for a timing table vs SDPA. Inference-only until the backward kernel lands.
 
 ## The paper's future work, answered: Triton
 
