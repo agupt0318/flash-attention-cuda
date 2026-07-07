@@ -60,11 +60,19 @@ __global__ void flash_fwd_kernel(const float *__restrict__ Q,
             for (int j = 0; j < jn; j++) {
                 if (causal && j0 + j > t)
                     break;                      // keys are ordered: done
-                float s = 0.0f;
+                // Four independent partial sums: a single accumulator
+                // makes the dot a serial chain of dependent FMAs (~4
+                // cycles each on Turing), and nvcc won't reassociate
+                // floats on its own — the chain gates the whole kernel.
+                float s0 = 0.0f, s1 = 0.0f, s2 = 0.0f, s3 = 0.0f;
 #pragma unroll
-                for (int c = 0; c < HEAD_DIM; c++)
-                    s += q[c] * Ks[j][c];
-                s *= scale;
+                for (int c = 0; c < HEAD_DIM; c += 4) {
+                    s0 += q[c + 0] * Ks[j][c + 0];
+                    s1 += q[c + 1] * Ks[j][c + 1];
+                    s2 += q[c + 2] * Ks[j][c + 2];
+                    s3 += q[c + 3] * Ks[j][c + 3];
+                }
+                float s = ((s0 + s1) + (s2 + s3)) * scale;
 
                 if (s > m) {                    // rescale history
                     const float corr = __expf(m - s);
