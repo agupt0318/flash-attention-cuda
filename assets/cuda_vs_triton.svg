@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 560" font-family="SFMono-Regular, Menlo, Consolas, monospace" xml:space="preserve">
+  <style>
+    text { fill: #c9d1d9; font-size: 12px; white-space: pre; }
+    .dim { fill: #8b949e; }
+    .ttl { font-size: 14px; }
+    .cap { font-size: 13px; }
+    .hl { opacity: 0; }
+    .ph1 { animation: ph1 10s steps(1) infinite; }
+    .ph2 { animation: ph2 10s steps(1) infinite; }
+    .ph3 { animation: ph3 10s steps(1) infinite; }
+    .ph4 { animation: ph4 10s steps(1) infinite; }
+    @keyframes ph1 { 0%,24.9% { opacity: 1; } 25%,100% { opacity: 0; } }
+    @keyframes ph2 { 25%,49.9% { opacity: 1; } 0%,24.9%,50%,100% { opacity: 0; } }
+    @keyframes ph3 { 50%,74.9% { opacity: 1; } 0%,49.9%,75%,100% { opacity: 0; } }
+    @keyframes ph4 { 75%,99.9% { opacity: 1; } 0%,74.9% { opacity: 0; } }
+  </style>
+
+  <rect width="920" height="560" rx="10" fill="#0d1117" stroke="#30363d"/>
+  <text x="30" y="38" class="ttl">one algorithm, two renderings — what the compiler takes off your hands</text>
+  <text x="30" y="58" class="dim">src/flash_fwd.cu (hand-scheduled CUDA)                 triton/flash_attn_triton.py (compiled)</text>
+
+  <!-- panes -->
+  <rect x="30" y="75" width="420" height="390" rx="6" fill="#161b22" stroke="#30363d"/>
+  <rect x="470" y="75" width="420" height="390" rx="6" fill="#161b22" stroke="#30363d"/>
+
+  <!-- phase highlight bars: CUDA pane (line height 26, first line y=105) -->
+  <g class="hl ph1"><rect x="34" y="88"  width="412" height="104" fill="#1f6feb33"/></g>
+  <g class="hl ph2"><rect x="34" y="192" width="412" height="78"  fill="#1f6feb33"/></g>
+  <g class="hl ph3"><rect x="34" y="270" width="412" height="52"  fill="#1f6feb33"/></g>
+  <g class="hl ph4"><rect x="34" y="322" width="412" height="52"  fill="#1f6feb33"/></g>
+  <!-- Triton pane -->
+  <g class="hl ph1"><rect x="474" y="88"  width="412" height="78"  fill="#23863633"/></g>
+  <g class="hl ph2"><rect x="474" y="166" width="412" height="52"  fill="#23863633"/></g>
+  <g class="hl ph3"><rect x="474" y="218" width="412" height="78"  fill="#23863633"/></g>
+  <g class="hl ph4"><rect x="474" y="296" width="412" height="78"  fill="#23863633"/></g>
+
+  <!-- CUDA code -->
+  <g>
+    <text x="44" y="105">for (j0 = 0; j0 &lt; kv_end; j0 += BLOCK_N) {</text>
+    <text x="44" y="131">  Ks[i/D][i%D] = K[base + j0*D + i];</text>
+    <text x="44" y="157">  Vs[i/D][i%D] = V[base + j0*D + i];</text>
+    <text x="44" y="183">  __syncthreads();</text>
+    <text x="44" y="209">  for (j = 0; j &lt; jn; j++) {</text>
+    <text x="44" y="235">    if (causal &amp;&amp; j0 + j &gt; t) break;</text>
+    <text x="44" y="261">    s = dot(q, Ks[j]) * scale;</text>
+    <text x="44" y="287">    if (s &gt; m) { corr = expf(m - s);</text>
+    <text x="44" y="313">      l *= corr; acc[] *= corr; m = s; }</text>
+    <text x="44" y="339">    e = expf(s - m);  l += e;</text>
+    <text x="44" y="365">    acc[] += e * Vs[j][];</text>
+    <text x="44" y="391">  }</text>
+    <text x="44" y="417">  __syncthreads();</text>
+    <text x="44" y="443">}   O[row] = acc / l;</text>
+  </g>
+
+  <!-- Triton code -->
+  <g>
+    <text x="484" y="105">for start_n in range(0, hi, BLOCK_N):</text>
+    <text x="484" y="131">    k = tl.load(K + tile_offsets, mask)</text>
+    <text x="484" y="157">    v = tl.load(V + tile_offsets, mask)</text>
+    <text x="484" y="183">    s = tl.dot(q, tl.trans(k)) * scale</text>
+    <text x="484" y="209">    s = tl.where(causal_mask, s, -inf)</text>
+    <text x="484" y="235">    m_new = tl.maximum(m_i, tl.max(s, 1))</text>
+    <text x="484" y="261">    corr = tl.exp(m_i - m_new)</text>
+    <text x="484" y="287">    m_i = m_new</text>
+    <text x="484" y="313">    p = tl.exp(s - m_new[:, None])</text>
+    <text x="484" y="339">    l_i = l_i * corr + tl.sum(p, 1)</text>
+    <text x="484" y="365">    acc = acc*corr[:,None] + tl.dot(p, v)</text>
+    <text x="484" y="417" class="dim"># no syncthreads, no smem indexing —</text>
+    <text x="484" y="443" class="dim"># scheduling is the compiler's problem</text>
+  </g>
+
+  <!-- phase captions -->
+  <g class="hl ph1"><text x="30" y="497" class="cap"><tspan fill="#79c0ff">1/4</tspan>  stream one K/V tile HBM → SRAM: cooperative loads + barriers vs a masked tl.load</text></g>
+  <g class="hl ph2"><text x="30" y="497" class="cap"><tspan fill="#79c0ff">2/4</tspan>  score the tile against q: one register at a time vs a single tl.dot</text></g>
+  <g class="hl ph3"><text x="30" y="497" class="cap"><tspan fill="#79c0ff">3/4</tspan>  new running max? rescale all history by exp(m − m′) — the online-softmax trick</text></g>
+  <g class="hl ph4"><text x="30" y="497" class="cap"><tspan fill="#79c0ff">4/4</tspan>  fold the tile into the normalizer and accumulator; O = acc/ℓ after the last tile</text></g>
+
+  <text x="30" y="537" class="dim">per-key stats in registers (left) vs per-tile stats via tl.dot (right) — same recurrence, same float64 judge, ~120 vs ~70 lines</text>
+</svg>
