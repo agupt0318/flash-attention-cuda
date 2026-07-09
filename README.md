@@ -48,15 +48,15 @@ One query row streaming through K/V tiles. The green window is the tile currentl
   <img src="assets/convergence.gif" width="640" alt="Attention weights revealed tile by tile, with the max-norm error against exact attention dropping to 1e-7 at the end of the stream">
 </p>
 
-## Correctness without owning a GPU
+## Correctness without a GPU\
 
-This was built on a machine with no NVIDIA hardware, so correctness is layered:
+This was built on a machine with no NVIDIA hardware, so correctness is relative and layered:
 
 1. [src/reference.cpp](src/reference.cpp): naive attention with double accumulation, the ground truth.
 2. [src/flash_cpu.cpp](src/flash_cpu.cpp) runs **the flash algorithm on the CPU**, same tiling and the same float precision the kernel uses. Validated against the reference across ragged shapes (N = 33, 257, 300…) in both mask modes: `make test`, errors ~1e-6.
 3. [src/flash_fwd.cu](src/flash_fwd.cu) mirrors the validated recurrence; CI compiles it with nvcc on every push, and [tests/test_gpu.cu](tests/test_gpu.cu) checks it against the reference at 5e-5 on real hardware (`make test-gpu`).
 
-The algorithm's math never had to be debugged through a device boundary. By the time CUDA entered, only CUDA could be wrong.
+So, essentially I did not have to "discover" whether FlashAttention was mathematically correct by running CUDA, since I could prove and test the algorithm on CPU first. So when they later wrote the CUDA kernel, any new failure is much more likely to be a GPU implementation bug, not an algorithm bug.
 
 <p align="center">
   <img src="assets/tests.svg" width="740" alt="Animated terminal: make test running the tiled algorithm against the naive reference across ten shapes, all passing at ~1e-6">
