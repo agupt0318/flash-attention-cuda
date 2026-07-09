@@ -27,8 +27,9 @@ inline float rand_float(uint64_t &state)
     state ^= state << 25;
     state ^= state >> 27;
     uint64_t r = state * 0x2545F4914F6CDD1DULL;
-    // uniform in [-1, 1): plenty of dynamic range for softmax stress
-    return (float)((r >> 40) / 8388608.0 * 2.0 - 1.0);
+    // uniform in [-1, 1): 24 random bits / 2^23 lands in [0, 2), shift down
+    // by 1. (The old form multiplied by 2 as well and drifted to [-1, 3).)
+    return (float)((r >> 40) / 8388608.0 - 1.0);
 }
 
 inline void fill_random(std::vector<float> &v, uint64_t seed)
