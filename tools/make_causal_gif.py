@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Render assets/causal_tiles.gif: which K/V tiles each query tile
-actually loads under causal masking — the same skip logic flash_fwd.cu
+actually loads under causal masking, the same skip logic flash_fwd.cu
 runs (kv_end = min(seq, q0 + BLOCK_M); rows break at the diagonal).
 Deterministic; regenerate with  python3 tools/make_causal_gif.py
 """

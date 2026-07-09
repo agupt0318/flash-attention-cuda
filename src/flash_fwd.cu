@@ -3,7 +3,7 @@
 // IO structure per the paper: K and V stream through shared memory in
 // BLOCK_N-row tiles; the N x N score matrix never exists anywhere. One
 // CTA owns a BLOCK_M-row tile of queries, and each row is split across
-// a PAIR of threads — each thread carries half the row's q and half its
+// a PAIR of threads, so each thread carries half the row's q and half its
 // accumulator in registers, and the pair joins dot-product halves with
 // one warp shuffle per key.
 //
@@ -11,12 +11,12 @@
 // the SM at 12 warps, and Nsight showed schedulers finding an eligible
 // warp only 31% of cycles (1.76 active warps/scheduler). Halving the
 // per-thread state (~100 regs) buys ~16 warps/SM plus twice the CTAs
-// per problem — latency hiding, which the profile said was the wall.
+// per problem, the latency hiding that the profile said was the wall.
 //
 // The softmax statistics use the online update at per-key granularity
 // (Algorithm 1 with Bc = 1 for the stats; the IO tiling is unchanged):
 // a new max rescales history by exp(m_old - m_new), then the key folds
-// in. Both threads of a pair track m and l redundantly — cheaper than
+// in. Both threads of a pair track m and l redundantly, which is cheaper than
 // communicating them. Causal masking is a predicate, not a break: the
 // shuffle requires pairs to execute in lockstep, so the loop bound
 // stays uniform and masked keys contribute e = 0.
@@ -136,7 +136,7 @@ static void launch(dim3 grid, cudaStream_t stream, const float *Q,
             Q, K, V, O, lse, seq, scale);
 }
 
-// stream: where to enqueue the launch — callers embedded in a runtime
+// stream: where to enqueue the launch, for callers embedded in a runtime
 // (e.g. the PyTorch binding) pass their current stream so ordering with
 // surrounding ops holds; standalone callers let it default to stream 0.
 void flash_forward(int batch, int heads, int seq, int d, const float *Q,

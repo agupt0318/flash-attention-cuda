@@ -20,7 +20,7 @@ struct Shape {
     }
 };
 
-// xorshift64* — deterministic across platforms, unlike rand()
+// xorshift64*: deterministic across platforms, unlike rand()
 inline float rand_float(uint64_t &state)
 {
     state ^= state >> 12;

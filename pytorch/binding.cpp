@@ -1,7 +1,7 @@
 // PyTorch binding: flash_attention_cuda_ext.forward(q, k, v, causal).
 // Validates the contract the kernel assumes, launches on torch's
 // current stream, and hands back a fresh output tensor. Inference-only
-// for now — no autograd node; the backward kernel is roadmap.
+// for now: no autograd node; the backward kernel is on the roadmap.
 
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>

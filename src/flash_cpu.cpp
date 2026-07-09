@@ -1,7 +1,7 @@
 // FlashAttention's algorithm, minus the GPU: process K/V in tiles of
 // TILE_N, keeping only a running row max m, normalizer l, and an
 // unnormalized accumulator per query row (Algorithm 1 of the paper,
-// with the loop order the CUDA kernel uses — each query row streams
+// with the loop order the CUDA kernel uses, so each query row streams
 // through all K/V tiles). Deliberately float, not double: this is the
 // numerics the kernel will have, validated against the double-accum
 // reference before any CUDA exists.

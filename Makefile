@@ -1,6 +1,6 @@
 # CPU targets build anywhere (clang/gcc); CUDA targets need nvcc.
-# `make test` — CPU-side correctness (reference vs tiled algorithm)
-# `make test-gpu` / `make bench` — require an NVIDIA GPU
+# `make test`: CPU-side correctness (reference vs tiled algorithm)
+# `make test-gpu` / `make bench`: require an NVIDIA GPU
 
 CXX      ?= c++
 NVCC     ?= nvcc
@@ -9,7 +9,7 @@ BUILD    := build
 
 CXXFLAGS  := -std=c++17 -O2 -Wall -Wextra -Isrc -MMD -MP
 # -Xptxas=-v prints per-kernel register counts and spill bytes at
-# compile time — the first thing to read when performance is flat.
+# compile time, the first thing to read when performance is flat.
 NVCCFLAGS := -std=c++17 -O3 -arch=$(ARCH) -Isrc -lineinfo \
              -Xptxas=-v --compiler-options -Wall,-Wextra
 

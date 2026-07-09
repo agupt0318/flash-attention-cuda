@@ -1,12 +1,11 @@
-"""FlashAttention forward in Triton — the answer to the paper's own
+"""FlashAttention forward in Triton, my answer to the paper's own
 "Compiling to CUDA" future-work paragraph (Section 5): the same
-IO-aware algorithm written in a high-level DSL and compiled, instead
-of hand-scheduled in CUDA.
+IO-aware algorithm written in a high-level DSL and compiled down to CUDA.
 
 Same recurrence as src/flash_fwd.cu, different granularity: Triton
 programs work on whole tiles, so the online-softmax statistics update
-per K/V tile (Algorithm 1 exactly) with tl.dot doing the tile matmuls
-— what the CUDA kernel spells out in registers and __syncthreads, the
+per K/V tile (Algorithm 1 exactly) with tl.dot doing the tile matmuls.
+What the CUDA kernel spells out in registers and __syncthreads, the
 compiler schedules here.
 
     from flash_attn_triton import flash_attention_triton
@@ -23,7 +22,7 @@ import triton
 import triton.language as tl
 
 
-# Let the compiler search the schedule space — the whole point of the
+# Let the compiler search the schedule space, the whole point of the
 # high-level rendering. Tuning runs once per (seq_len, head_dim, mask).
 @triton.autotune(
     configs=[

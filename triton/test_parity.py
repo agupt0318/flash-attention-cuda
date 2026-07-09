@@ -1,5 +1,5 @@
 """Triton kernel vs a float64 reference, with the hand-written CUDA
-kernel alongside when its extension is importable — three ways to
+kernel alongside when its extension is importable: three ways to
 compute the same attention, one judge. Needs a CUDA box.
 
     python3 triton/test_parity.py

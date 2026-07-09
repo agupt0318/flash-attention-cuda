@@ -4,7 +4,7 @@
     o = flash_attention(q, k, v, causal=True)
 
 q/k/v: [batch, heads, seq, head_dim] fp32 CUDA tensors, head_dim 32 or
-64 — the same contract as torch's scaled_dot_product_attention with
+64, the same contract as torch's scaled_dot_product_attention with
 explicit head layout. The extension JIT-compiles on first import
 (needs nvcc + a CUDA build of torch); nothing to install.
 

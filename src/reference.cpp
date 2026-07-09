@@ -1,5 +1,5 @@
 // Naive attention: the ground truth everything else is judged against.
-// One query row at a time — scores, stable softmax, weighted V sum —
+// One query row at a time: scores, stable softmax, weighted V sum,
 // with double accumulation throughout so float rounding in the fast
 // implementations shows up as *their* error, not the reference's.
 
