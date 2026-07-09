@@ -96,7 +96,7 @@ The four phases of the recurrence, highlighted in both languages at once. The le
 
 ## Try it on a free GPU
 
-Everything in the verification story, one click: [the Colab notebook](https://colab.research.google.com/github/agupt0318/flash-attention-cuda/blob/main/demo/flash_attention_colab.ipynb) clones the repo on a free T4, runs the CPU suite, compiles and checks the CUDA kernel for whatever GPU it lands on, runs both parity suites, and ends with a CUDA-vs-Triton-vs-SDPA timing plot.
+[The Colab notebook](https://colab.research.google.com/github/agupt0318/flash-attention-cuda/blob/main/demo/flash_attention_colab.ipynb) clones the repo on a free T4, runs the CPU suite, compiles and checks the CUDA kernel for whatever GPU it lands on, runs both parity suites, and ends with a CUDA-vs-Triton-vs-SDPA timing plot.
 
 ## Numbers (Colab T4, fp32 forward, B=4 H=8 d=64)
 
@@ -109,9 +109,7 @@ From a full notebook run, every test green, then the timing sweep:
 | 2048 | 12.592 ms | 34.036 ms | 11.335 ms | 19.201 ms | 1.07 GiB |
 | 4096 | 47.714 ms | 135.868 ms | 45.492 ms | 83.251 ms | **4.13 GiB** |
 
-(flash-family peak mem is 0.02 to 0.13 GiB: the inputs and output, nothing else.)
-
-Reading it honestly, in both directions:
+(flash-family peak mem is 0.02 to 0.13 GiB: the inputs and output.)
 
 - **The algorithm's claim reproduces.** Naive attention (cuBLAS matmuls plus a materialized softmax) *wins below N≈1024*: its matmuls are perfect and the score matrix still fits in cache. That crossover is in the paper. Past it, N² physics takes over: at N=4096 flash is **1.75× faster and uses 32× less memory**, and the naive curve is heading toward an OOM that a tiled implementation avoids entirely.
 - **SDPA beats our kernel at every length**, by 1.3× at N=512 and ~5% at N=4096. The context: at fp32 on a T4, SDPA dispatches to its memory-efficient backend, itself a flash-style IO-aware kernel with years of tuning. This is a loss to a production sibling that runs the same algorithm. The gap is being worked. An ILP round (independent partial sums in the dot) bought 16% at N=1024 and nothing at N=4096, which killed the latency-bound hypothesis and pointed at **shared-memory issue rate**: one 4-byte `LDS` per FMA caps the math pipes. `float4` smem reads are the current attempt. The Triton rendering trails ~3× on strict-IEEE dots; autotuning recovered ~10%.
