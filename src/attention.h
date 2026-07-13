@@ -16,3 +16,12 @@ void attention_flash_cpu(const Shape &s, const std::vector<float> &Q,
                          const std::vector<float> &K,
                          const std::vector<float> &V, bool causal,
                          std::vector<float> &O, std::vector<float> *lse);
+
+// Same algorithm as attention_flash_cpu, tuned for throughput: NEON-
+// vectorized inner loops (scalar fallback elsewhere), query-tile cache
+// blocking, and the independent work spread across cores. Same numerics,
+// same contract.
+void attention_flash_fast(const Shape &s, const std::vector<float> &Q,
+                          const std::vector<float> &K,
+                          const std::vector<float> &V, bool causal,
+                          std::vector<float> &O, std::vector<float> *lse);

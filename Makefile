@@ -28,6 +28,21 @@ $(BUILD)/test_cpu: $(BUILD)/test_cpu.o $(BUILD)/reference.o $(BUILD)/flash_cpu.o
 test: $(BUILD)/test_cpu
 	$(BUILD)/test_cpu
 
+# ---- Fast CPU kernel (NEON + query-tile blocking + threads) ----
+$(BUILD)/test_cpu_fast: $(BUILD)/test_cpu_fast.o $(BUILD)/reference.o \
+                        $(BUILD)/flash_cpu_fast.o
+	$(CXX) $(CXXFLAGS) -pthread $^ -o $@
+
+$(BUILD)/bench_cpu: $(BUILD)/bench_cpu.o $(BUILD)/flash_cpu.o \
+                    $(BUILD)/flash_cpu_fast.o
+	$(CXX) $(CXXFLAGS) -pthread $^ -o $@
+
+test-fast: $(BUILD)/test_cpu_fast
+	$(BUILD)/test_cpu_fast
+
+bench-cpu: $(BUILD)/bench_cpu
+	$(BUILD)/bench_cpu
+
 # ---- CUDA (needs nvcc; binaries need an NVIDIA GPU) ----
 $(BUILD)/%.cu.o: src/%.cu | $(BUILD)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
