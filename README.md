@@ -128,12 +128,41 @@ Edge and ARM devices (phones, SBCs like the RK3588) run inference with no CUDA t
 
 Read honestly, the levers split apart. NEON plus cache blocking on a single thread is about 1.5× over the scalar path, because clang already auto-vectorizes the simple loops at `-O2`. The rest of the win is parallelism across the ten cores; the work is independent per row, so it scales close to linearly. `FLASH_CPU_THREADS=N` pins the core count for attribution or for leaving cores free. Correctness is judged the same way as the GPU path, against the double-accum reference over shapes that stress the tile boundaries (`make test-fast`), and the parallel path runs clean under ThreadSanitizer and Address/UB sanitizers.
 
+## Running a real model on-device
+
+The CPU kernel is enough to run a real trained transformer end to end, with no GPU anywhere in the loop. [edge/story.cpp](edge/story.cpp) loads [TinyStories](https://huggingface.co/karpathy/tinyllamas) `stories42M`, a 42M-parameter Llama-architecture model (dim 512, 8 layers, 8 heads, head_dim 64), and generates text. The prompt prefill runs through `attention_flash_fast`; each generated token attends over the KV cache through `attention_step_cpu`. RMSNorm, RoPE, SwiGLU, the matmuls, and the tokenizer all live in that one file, so the binary is self-contained and runs the same on an Orange Pi as on a laptop.
+
+Fetch the weights (downloaded, not committed) and run:
+
+```sh
+mkdir -p edge
+curl -L -o edge/stories42M.bin https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin  # ~167 MB
+curl -L -o edge/tokenizer.bin  https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
+make story
+./build/story -p "Once upon a time" -n 256        # greedy, deterministic
+./build/story -p "The robot" -t 0.9 -s 42         # temperature sampling
+```
+
+Sample output (greedy): *"Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine. One day, she saw a big, yellow flower in the garden. It was a sunflower!..."*
+
+On an Apple M4 Pro, fp32:
+
+| phase | rate | via |
+|---|---|---|
+| prefill | ~250 tok/s | `attention_flash_fast` |
+| decode | ~315 tok/s (3.2 ms/token) | `attention_step_cpu` |
+
+The first run also faults in the 167 MB of weights from disk, which shows up as a slower first token.
+
+Correctness is pinned to the reference: under greedy sampling the generated tokens are byte-identical to [llama2.c](https://github.com/karpathy/llama2.c)'s `run.c` on the same weights, verified across a set of prompts. Greedy decoding is deterministic, so a correct forward pass has to match. The generation path also runs clean under ThreadSanitizer and Address/UB sanitizers.
+
 ## Build & run
 
 ```sh
 make test                  # CPU: tiled algorithm vs reference (no GPU needed)
 make test-fast             # CPU: NEON + threaded kernel vs reference (no GPU needed)
 make bench-cpu             # CPU: fast kernel vs scalar, ms + speedup + GFLOP/s
+make story                 # CPU: run a real TinyStories model (see above for weights)
 make cuda                  # compile kernels without running (what CI does)
 make test-gpu ARCH=sm_80   # on a CUDA box: kernel vs reference
 make bench  ARCH=sm_80     # wall time, TFLOP/s, and the N² traffic avoided
@@ -164,12 +193,16 @@ pytorch/
 triton/
   flash_attn_triton.py  the same algorithm through a compiler
   test_parity.py        three implementations, one float64 judge
+edge/
+  story.cpp        a real TinyStories transformer end to end on the CPU kernel
 ```
 
 ## Roadmap
 
 - [x] Run the numbers on real hardware: Colab T4 table above, via the notebook
 - [x] Fast CPU kernel (NEON + query-tile blocking + threads) for GPU-less and edge inference
+- [x] End-to-end on-device: a real TinyStories transformer through the CPU kernel, verified against llama2.c
+- [ ] KV-cache decode kernel: the recompute-free hot path the on-device demo points at next
 - [ ] Backward pass: recompute `P` from `O` + logsumexp per the paper's Appendix B, then a real autograd.Function
 - [ ] Close the gap to SDPA's mem-efficient kernel: >1 query row per thread, vectorized (float4) loads, and occupancy/register tuning. The N=512 1.8× is the target
 - [ ] Block size tuning (CUDA and the Triton ~3× gap are a config problem) + head dim 128
