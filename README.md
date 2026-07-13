@@ -114,10 +114,26 @@ From a full notebook run, every test green, then the timing sweep:
 - **The algorithm's claim reproduces.** Naive attention (cuBLAS matmuls plus a materialized softmax) *wins below N≈1024*: its matmuls are perfect and the score matrix still fits in cache. That crossover is in the paper. Past it, N² physics takes over: at N=4096 flash is **1.75× faster and uses 32× less memory**, and the naive curve is heading toward an OOM that a tiled implementation avoids entirely.
 - **SDPA beats our kernel at every length**, by 1.3× at N=512 and ~5% at N=4096. The context: at fp32 on a T4, SDPA dispatches to its memory-efficient backend, itself a flash-style IO-aware kernel with years of tuning. This is a loss to a production sibling that runs the same algorithm. The gap is being worked. An ILP round (independent partial sums in the dot) bought 16% at N=1024 and nothing at N=4096, which killed the latency-bound hypothesis and pointed at **shared-memory issue rate**: one 4-byte `LDS` per FMA caps the math pipes. `float4` smem reads are the current attempt. The Triton rendering trails ~3× on strict-IEEE dots; autotuning recovered ~10%.
 
+## CPU: attention where there is no GPU
+
+Edge and ARM devices (phones, SBCs like the RK3588) run inference with no CUDA to reach for, so the same online-softmax algorithm runs as a fast CPU kernel in [src/flash_cpu_fast.cpp](src/flash_cpu_fast.cpp). It keeps the exact numerics of the reference and adds three throughput levers: NEON-vectorized inner loops on AArch64 (with a scalar path the compiler auto-vectorizes elsewhere), query-tile blocking so each K/V tile is reused across a block of query rows while it stays cache-hot, and the independent (head, query-tile) units spread across cores.
+
+`make bench-cpu` on an Apple M4 Pro (10 performance cores), B=1 H=8 d=64, fp32, non-causal:
+
+| N | scalar flash | fast | speedup | fast GFLOP/s |
+|---|---|---|---|---|
+| 512 | 35.4 ms | 3.7 ms | 9.5× | 144 |
+| 1024 | 142.7 ms | 14.5 ms | 9.8× | 148 |
+| 2048 | 579.1 ms | 43.7 ms | 13.2× | 197 |
+
+Read honestly, the levers split apart. NEON plus cache blocking on a single thread is about 1.5× over the scalar path, because clang already auto-vectorizes the simple loops at `-O2`. The rest of the win is parallelism across the ten cores; the work is independent per row, so it scales close to linearly. `FLASH_CPU_THREADS=N` pins the core count for attribution or for leaving cores free. Correctness is judged the same way as the GPU path, against the double-accum reference over shapes that stress the tile boundaries (`make test-fast`), and the parallel path runs clean under ThreadSanitizer and Address/UB sanitizers.
+
 ## Build & run
 
 ```sh
 make test                  # CPU: tiled algorithm vs reference (no GPU needed)
+make test-fast             # CPU: NEON + threaded kernel vs reference (no GPU needed)
+make bench-cpu             # CPU: fast kernel vs scalar, ms + speedup + GFLOP/s
 make cuda                  # compile kernels without running (what CI does)
 make test-gpu ARCH=sm_80   # on a CUDA box: kernel vs reference
 make bench  ARCH=sm_80     # wall time, TFLOP/s, and the N² traffic avoided
@@ -129,15 +145,18 @@ make bench  ARCH=sm_80     # wall time, TFLOP/s, and the N² traffic avoided
 
 ```
 src/
-  attention.h     the one API both CPU implementations share
-  reference.cpp   naive attention, double accumulation (ground truth)
-  flash_cpu.cpp   Algorithm 1 on the CPU, validates the math locally
-  flash_gpu.h     host-side contract + CUDA_CHECK
-  flash_fwd.cu    the kernel + dispatch
-  bench.cu        timing/TFLOPs harness
+  attention.h      the one API the CPU implementations share
+  reference.cpp    naive attention, double accumulation (ground truth)
+  flash_cpu.cpp    Algorithm 1 on the CPU, validates the math locally
+  flash_cpu_fast.cpp  NEON + query-tile blocking + threaded CPU kernel
+  flash_gpu.h      host-side contract + CUDA_CHECK
+  flash_fwd.cu     the kernel + dispatch
+  bench.cu         timing/TFLOPs harness (GPU)
+  bench_cpu.cpp    CPU throughput: fast kernel vs scalar
 tests/
-  test_cpu.cpp    tiled vs reference, shapes chosen to hurt
-  test_gpu.cu     kernel vs reference, same shapes + N=1024
+  test_cpu.cpp      tiled vs reference, shapes chosen to hurt
+  test_cpu_fast.cpp fast kernel vs reference, tile-boundary shapes
+  test_gpu.cu       kernel vs reference, same shapes + N=1024
 pytorch/
   binding.cpp     torch extension: contract checks + current-stream launch
   flash_attn.py   JIT front door: flash_attention(q, k, v, causal)
@@ -150,6 +169,7 @@ triton/
 ## Roadmap
 
 - [x] Run the numbers on real hardware: Colab T4 table above, via the notebook
+- [x] Fast CPU kernel (NEON + query-tile blocking + threads) for GPU-less and edge inference
 - [ ] Backward pass: recompute `P` from `O` + logsumexp per the paper's Appendix B, then a real autograd.Function
 - [ ] Close the gap to SDPA's mem-efficient kernel: >1 query row per thread, vectorized (float4) loads, and occupancy/register tuning. The N=512 1.8× is the target
 - [ ] Block size tuning (CUDA and the Triton ~3× gap are a config problem) + head dim 128
