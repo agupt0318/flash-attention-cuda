@@ -153,6 +153,37 @@ void process_tile(const float *Qh, const float *Kh, const float *Vh,
 
 }   // namespace
 
+// Single-query decode step (see attention.h). The KV cache row stride is
+// n_heads*head_dim; each head reads its own slice.
+void attention_step_cpu(const float *q, const float *Kcache,
+                        const float *Vcache, int n_heads, int head_dim,
+                        int n_keys, float *out)
+{
+    const int D = n_heads * head_dim;
+    const float scale = 1.0f / std::sqrt((float)head_dim);
+    for (int h = 0; h < n_heads; h++) {
+        const float *qh = q + h * head_dim;
+        float *o = out + h * head_dim;
+        float m = -1e30f, l = 0.0f;
+        for (int c = 0; c < head_dim; c++)
+            o[c] = 0.0f;
+        for (int t = 0; t < n_keys; t++) {
+            const float *k = Kcache + (size_t)t * D + h * head_dim;
+            const float s = dotf(qh, k, head_dim) * scale;
+            if (s > m) {
+                const float corr = expf(m - s);
+                l *= corr;
+                scal(o, corr, head_dim);
+                m = s;
+            }
+            const float e = expf(s - m);
+            l += e;
+            axpy(o, Vcache + (size_t)t * D + h * head_dim, e, head_dim);
+        }
+        scal(o, 1.0f / l, head_dim);
+    }
+}
+
 void attention_flash_fast(const Shape &s, const std::vector<float> &Q,
                           const std::vector<float> &K,
                           const std::vector<float> &V, bool causal,

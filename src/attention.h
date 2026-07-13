@@ -25,3 +25,12 @@ void attention_flash_fast(const Shape &s, const std::vector<float> &Q,
                           const std::vector<float> &K,
                           const std::vector<float> &V, bool causal,
                           std::vector<float> &O, std::vector<float> *lse);
+
+// Single-query decode step: one query attends over a KV cache of n_keys
+// past positions. q and out are [n_heads*head_dim]; Kcache/Vcache are
+// [n_keys][n_heads*head_dim] (row t, then head, then dim). Same online-
+// softmax and NEON inner loops as the prefill kernel; serial (the per-
+// step work is tiny, and it is called once per layer per generated token).
+void attention_step_cpu(const float *q, const float *Kcache,
+                        const float *Vcache, int n_heads, int head_dim,
+                        int n_keys, float *out);
