@@ -21,11 +21,10 @@
 // into a usable kernel.
 
 #include <cmath>
-#include <cstdlib>
-#include <thread>
 #include <vector>
 #include <algorithm>
 #include "attention.h"
+#include "parallel.h"
 
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
@@ -206,31 +205,11 @@ void attention_flash_fast(const Shape &s, const std::vector<float> &Q,
                      s.seq, s.d, scale, causal, r0, r1);
     };
 
-    // FLASH_CPU_THREADS overrides the core count (0/unset = all cores).
-    // Handy for pinning cores and for attributing speedup (NEON + blocking
-    // at T=1 vs the extra parallelism on top).
-    unsigned hw = std::thread::hardware_concurrency();
-    if (const char *env = std::getenv("FLASH_CPU_THREADS")) {
-        int req = std::atoi(env);
-        if (req > 0)
-            hw = (unsigned)req;
-    }
-    unsigned T = (unsigned)std::min<long>(hw ? hw : 1, total);
-    if (T <= 1) {
-        for (long w = 0; w < total; w++)
+    // One (head, query-tile) unit per index; the pool splits them across
+    // cores (FLASH_CPU_THREADS caps the count). Each unit is independent, so
+    // the split is race-free.
+    parallel_for(total, /*min_chunk=*/1, [&](int64_t w0, int64_t w1) {
+        for (int64_t w = w0; w < w1; w++)
             run(w);
-        return;
-    }
-
-    std::vector<std::thread> pool;
-    pool.reserve(T);
-    for (unsigned t = 0; t < T; t++) {
-        const long w0 = total * t / T, w1 = total * (t + 1) / T;
-        pool.emplace_back([&, w0, w1] {
-            for (long w = w0; w < w1; w++)
-                run(w);
-        });
-    }
-    for (auto &th : pool)
-        th.join();
+    });
 }

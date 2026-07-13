@@ -30,11 +30,11 @@ test: $(BUILD)/test_cpu
 
 # ---- Fast CPU kernel (NEON + query-tile blocking + threads) ----
 $(BUILD)/test_cpu_fast: $(BUILD)/test_cpu_fast.o $(BUILD)/reference.o \
-                        $(BUILD)/flash_cpu_fast.o
+                        $(BUILD)/flash_cpu_fast.o $(BUILD)/parallel.o
 	$(CXX) $(CXXFLAGS) -pthread $^ -o $@
 
 $(BUILD)/bench_cpu: $(BUILD)/bench_cpu.o $(BUILD)/flash_cpu.o \
-                    $(BUILD)/flash_cpu_fast.o
+                    $(BUILD)/flash_cpu_fast.o $(BUILD)/parallel.o
 	$(CXX) $(CXXFLAGS) -pthread $^ -o $@
 
 test-fast: $(BUILD)/test_cpu_fast
@@ -46,8 +46,9 @@ bench-cpu: $(BUILD)/bench_cpu
 # ---- On-device demo: a real TinyStories model through the CPU kernel ----
 # Weights are downloaded, not committed (see README "Running a real model").
 # Build with `make story`, then `./build/story -p "Once upon a time"`.
-$(BUILD)/story: edge/story.cpp $(BUILD)/flash_cpu_fast.o
-	$(CXX) $(CXXFLAGS) -pthread edge/story.cpp $(BUILD)/flash_cpu_fast.o -o $@
+$(BUILD)/story: edge/story.cpp $(BUILD)/flash_cpu_fast.o $(BUILD)/parallel.o
+	$(CXX) $(CXXFLAGS) -pthread edge/story.cpp $(BUILD)/flash_cpu_fast.o \
+	    $(BUILD)/parallel.o -o $@
 
 story: $(BUILD)/story
 
