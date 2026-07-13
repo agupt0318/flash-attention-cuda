@@ -31,6 +31,7 @@
 #include <unistd.h>
 
 #include "attention.h"
+#include "parallel.h"
 
 #if defined(__ARM_NEON)
 #include <arm_neon.h>
@@ -86,27 +87,41 @@ static const float *map_checkpoint(const char *path, Config &c, Weights &w,
 
 // ---- math kernels (NEON where available) ----
 
-// out[i] = sum_j W[i*n + j] * x[j], W is [d][n] row-major
+// out[i] = sum_j W[i*n + j] * x[j], W is [d][n] row-major. The output rows
+// are independent, so the pool splits them across cores. Small matvecs run
+// inline (the dispatch would cost more than it saves).
 static void matvec(float *out, const float *x, const float *W, int n, int d)
 {
-    for (int i = 0; i < d; i++) {
-        const float *row = W + (size_t)i * n;
+    auto rows = [&](int64_t i0, int64_t i1) {
+        for (int64_t i = i0; i < i1; i++) {
+            const float *row = W + (size_t)i * n;
 #if defined(__ARM_NEON)
-        float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0);
-        int j = 0;
-        for (; j + 8 <= n; j += 8) {
-            a0 = vfmaq_f32(a0, vld1q_f32(row + j),     vld1q_f32(x + j));
-            a1 = vfmaq_f32(a1, vld1q_f32(row + j + 4), vld1q_f32(x + j + 4));
-        }
-        float s = vaddvq_f32(vaddq_f32(a0, a1));
-        for (; j < n; j++) s += row[j] * x[j];
-        out[i] = s;
+            float32x4_t a0 = vdupq_n_f32(0), a1 = vdupq_n_f32(0);
+            int j = 0;
+            for (; j + 8 <= n; j += 8) {
+                a0 = vfmaq_f32(a0, vld1q_f32(row + j),     vld1q_f32(x + j));
+                a1 = vfmaq_f32(a1, vld1q_f32(row + j + 4), vld1q_f32(x + j + 4));
+            }
+            float s = vaddvq_f32(vaddq_f32(a0, a1));
+            for (; j < n; j++) s += row[j] * x[j];
+            out[i] = s;
 #else
-        float s = 0;
-        for (int j = 0; j < n; j++) s += row[j] * x[j];
-        out[i] = s;
+            float s = 0;
+            for (int j = 0; j < n; j++) s += row[j] * x[j];
+            out[i] = s;
 #endif
-    }
+        }
+    };
+    // Only matmuls above this many multiply-adds are worth splitting: for the
+    // small projections the dispatch costs more than it saves, while the FFN
+    // and the vocab-sized logits matmul win clearly. The crossover is device-
+    // dependent, so MATVEC_MIN can retune it (e.g. on an Orange Pi).
+    static const int64_t thresh = [] {
+        const char *e = std::getenv("MATVEC_MIN");
+        return e ? atoll(e) : 400000LL;
+    }();
+    if ((int64_t)n * d < thresh) { rows(0, d); return; }
+    parallel_for(d, /*min_chunk=*/32, rows);
 }
 
 static void rmsnorm(float *out, const float *x, const float *w, int n)
