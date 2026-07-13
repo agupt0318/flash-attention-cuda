@@ -149,10 +149,12 @@ On an Apple M4 Pro, fp32:
 
 | phase | rate | via |
 |---|---|---|
-| prefill | ~250 tok/s | `attention_flash_fast` |
-| decode | ~315 tok/s (3.2 ms/token) | `attention_step_cpu` |
+| prefill | ~300 tok/s | `attention_flash_fast` |
+| decode | ~410 tok/s (2.4 ms/token) | `attention_step_cpu` + pooled matmuls |
 
 The first run also faults in the 167 MB of weights from disk, which shows up as a slower first token.
+
+Building this demo was what showed where the time actually goes. Attention through the KV-cache step is cheap; most of a decode token is the projection and FFN matmuls. Those, and the attention kernel, now run on a shared persistent thread pool ([src/parallel.h](src/parallel.h)) so the decode loop pays no per-call thread-spawn cost. Threading every matmul turned out to be slower than threading none, because the small projections cost more to dispatch than they save; running only the FFN and the vocab-sized logits matmul in parallel took decode from about 290 to about 410 tok/s. The crossover is device-dependent, so `MATVEC_MIN` retunes it (worth doing on an Orange Pi). The next real win is a batched/KV-cache decode kernel, which this harness can check against llama2.c the same way.
 
 Correctness is pinned to the reference: under greedy sampling the generated tokens are byte-identical to [llama2.c](https://github.com/karpathy/llama2.c)'s `run.c` on the same weights, verified across a set of prompts. Greedy decoding is deterministic, so a correct forward pass has to match. The generation path also runs clean under ThreadSanitizer and Address/UB sanitizers.
 
@@ -177,7 +179,8 @@ src/
   attention.h      the one API the CPU implementations share
   reference.cpp    naive attention, double accumulation (ground truth)
   flash_cpu.cpp    Algorithm 1 on the CPU, validates the math locally
-  flash_cpu_fast.cpp  NEON + query-tile blocking + threaded CPU kernel
+  flash_cpu_fast.cpp  NEON + query-tile blocking + pooled CPU kernel
+  parallel.h/.cpp  persistent thread pool (parallel_for) shared by the CPU paths
   flash_gpu.h      host-side contract + CUDA_CHECK
   flash_fwd.cu     the kernel + dispatch
   bench.cu         timing/TFLOPs harness (GPU)
