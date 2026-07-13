@@ -49,6 +49,12 @@ inline Error max_error(const std::vector<float> &a, const std::vector<float> &b)
     Error e{0, 0};
     for (size_t i = 0; i < a.size(); i++) {
         double d = std::fabs((double)a[i] - b[i]);
+        // A NaN in the output is a hard failure, but `d > e.abs` is false when
+        // d is NaN, so the naive max lets a NaN slip through as a passing zero.
+        // Promote any non-finite difference to +inf so the caller's threshold
+        // check always trips. (Inf already exceeds the threshold on its own.)
+        if (std::isnan(d))
+            d = HUGE_VAL;
         if (d > e.abs)
             e.abs = d;
         double r = d / (std::fabs((double)b[i]) + 1e-8);
