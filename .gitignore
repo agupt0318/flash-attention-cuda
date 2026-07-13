@@ -2,3 +2,8 @@ build/
 *.o
 *.d
 .DS_Store
+
+# On-device demo: model weights and tokenizer are downloaded, not committed.
+edge/*.bin
+# llama2.c reference, fetched only for the correctness cross-check.
+edge/run_ref.c

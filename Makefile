@@ -43,6 +43,14 @@ test-fast: $(BUILD)/test_cpu_fast
 bench-cpu: $(BUILD)/bench_cpu
 	$(BUILD)/bench_cpu
 
+# ---- On-device demo: a real TinyStories model through the CPU kernel ----
+# Weights are downloaded, not committed (see README "Running a real model").
+# Build with `make story`, then `./build/story -p "Once upon a time"`.
+$(BUILD)/story: edge/story.cpp $(BUILD)/flash_cpu_fast.o
+	$(CXX) $(CXXFLAGS) -pthread edge/story.cpp $(BUILD)/flash_cpu_fast.o -o $@
+
+story: $(BUILD)/story
+
 # ---- CUDA (needs nvcc; binaries need an NVIDIA GPU) ----
 $(BUILD)/%.cu.o: src/%.cu | $(BUILD)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
