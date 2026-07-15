@@ -19,3 +19,11 @@
 void flash_forward(int batch, int heads, int seq, int d, const float *Q,
                    const float *K, const float *V, bool causal, float *O,
                    float *lse, cudaStream_t stream = nullptr);
+
+// Backward: consumes the forward's O and lse (lse required here), fills
+// dQ/dK/dV. Allocates one [batch*heads*seq] float scratch internally.
+void flash_backward(int batch, int heads, int seq, int d, const float *Q,
+                    const float *K, const float *V, const float *O,
+                    const float *lse, const float *dO, bool causal,
+                    float *dQ, float *dK, float *dV,
+                    cudaStream_t stream = nullptr);
