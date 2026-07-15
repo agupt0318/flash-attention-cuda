@@ -66,7 +66,8 @@ $(BUILD)/%.cu.o: tests/%.cu | $(BUILD)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 $(BUILD)/test_gpu: $(BUILD)/test_gpu.cu.o $(BUILD)/flash_fwd.cu.o \
-                   $(BUILD)/reference.o
+                   $(BUILD)/flash_bwd.cu.o $(BUILD)/reference.o \
+                   $(BUILD)/reference_bwd.o
 	$(NVCC) $(NVCCFLAGS) $^ -o $@
 
 $(BUILD)/bench: $(BUILD)/bench.cu.o $(BUILD)/flash_fwd.cu.o

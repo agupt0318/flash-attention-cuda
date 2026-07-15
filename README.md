@@ -184,14 +184,15 @@ src/
   flash_cpu_fast.cpp  NEON + query-tile blocking + pooled CPU kernel
   parallel.h/.cpp  persistent thread pool (parallel_for) shared by the CPU paths
   flash_gpu.h      host-side contract + CUDA_CHECK
-  flash_fwd.cu     the kernel + dispatch
+  flash_fwd.cu     the forward kernel + dispatch
+  flash_bwd.cu     the backward kernels: dQ pass + dK/dV pass, no atomics
   bench.cu         timing/TFLOPs harness (GPU)
   bench_cpu.cpp    CPU throughput: fast kernel vs scalar
 tests/
   test_cpu.cpp      tiled vs reference, shapes chosen to hurt
   test_cpu_bwd.cpp  gradients: reference vs finite differences, tiled vs reference
   test_cpu_fast.cpp fast kernel vs reference, tile-boundary shapes
-  test_gpu.cu       kernel vs reference, same shapes + N=1024
+  test_gpu.cu       fwd and bwd kernels vs reference, same shapes + N=1024
 pytorch/
   binding.cpp     torch extension: contract checks + current-stream launch
   flash_attn.py   JIT front door: flash_attention(q, k, v, causal)
@@ -209,7 +210,8 @@ edge/
 - [x] Fast CPU kernel (NEON + query-tile blocking + threads) for GPU-less and edge inference
 - [x] End-to-end on-device: a real TinyStories transformer through the CPU kernel, verified against llama2.c
 - [ ] KV-cache decode kernel: the recompute-free hot path the on-device demo points at next
-- [ ] Backward pass CUDA kernel + autograd.Function. The algorithm half is done, the same CPU-first way the forward was: [src/flash_cpu_bwd.cpp](src/flash_cpu_bwd.cpp) recomputes `P` from the logsumexp and matches analytic double-precision gradients at ~1e-6 across both mask modes, with the analytic reference itself grounded in finite differences (`make test`)
+- [x] Backward pass, CPU-first like the forward: [src/flash_cpu_bwd.cpp](src/flash_cpu_bwd.cpp) proves the algorithm (logsumexp recompute of `P`, `D = rowsum(dO∘O)`) against analytic double-precision gradients grounded in finite differences (~1e-6, `make test`); [src/flash_bwd.cu](src/flash_bwd.cu) is that algorithm on device -- a dQ pass over query rows and a dK/dV pass over key rows, opposite reductions so nothing needs an atomic (`make test-gpu` on real hardware)
+- [ ] autograd.Function over the backward kernels, making the PyTorch op trainable
 - [ ] Close the gap to SDPA's mem-efficient kernel: >1 query row per thread, vectorized (float4) loads, and occupancy/register tuning. The N=512 1.8× is the target
 - [ ] Block size tuning (CUDA and the Triton ~3× gap are a config problem) + head dim 128
 - [ ] fp16/bf16 with tensor-core matmuls on Ampere+ (the fp32 kernel is the correctness baseline; fp32 is also all a T4 can show)
