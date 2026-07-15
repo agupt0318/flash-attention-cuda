@@ -25,8 +25,14 @@ $(BUILD)/%.o: tests/%.cpp | $(BUILD)
 $(BUILD)/test_cpu: $(BUILD)/test_cpu.o $(BUILD)/reference.o $(BUILD)/flash_cpu.o
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
-test: $(BUILD)/test_cpu
+$(BUILD)/test_cpu_bwd: $(BUILD)/test_cpu_bwd.o $(BUILD)/reference.o \
+                       $(BUILD)/reference_bwd.o $(BUILD)/flash_cpu.o \
+                       $(BUILD)/flash_cpu_bwd.o
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+test: $(BUILD)/test_cpu $(BUILD)/test_cpu_bwd
 	$(BUILD)/test_cpu
+	$(BUILD)/test_cpu_bwd
 
 # ---- Fast CPU kernel (NEON + query-tile blocking + threads) ----
 $(BUILD)/test_cpu_fast: $(BUILD)/test_cpu_fast.o $(BUILD)/reference.o \

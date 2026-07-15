@@ -179,6 +179,8 @@ src/
   attention.h      the one API the CPU implementations share
   reference.cpp    naive attention, double accumulation (ground truth)
   flash_cpu.cpp    Algorithm 1 on the CPU, validates the math locally
+  reference_bwd.cpp   analytic gradients, double accumulation (ground truth)
+  flash_cpu_bwd.cpp   Appendix B on the CPU: logsumexp recompute, D = rowsum(dO.O)
   flash_cpu_fast.cpp  NEON + query-tile blocking + pooled CPU kernel
   parallel.h/.cpp  persistent thread pool (parallel_for) shared by the CPU paths
   flash_gpu.h      host-side contract + CUDA_CHECK
@@ -187,6 +189,7 @@ src/
   bench_cpu.cpp    CPU throughput: fast kernel vs scalar
 tests/
   test_cpu.cpp      tiled vs reference, shapes chosen to hurt
+  test_cpu_bwd.cpp  gradients: reference vs finite differences, tiled vs reference
   test_cpu_fast.cpp fast kernel vs reference, tile-boundary shapes
   test_gpu.cu       kernel vs reference, same shapes + N=1024
 pytorch/
@@ -206,7 +209,7 @@ edge/
 - [x] Fast CPU kernel (NEON + query-tile blocking + threads) for GPU-less and edge inference
 - [x] End-to-end on-device: a real TinyStories transformer through the CPU kernel, verified against llama2.c
 - [ ] KV-cache decode kernel: the recompute-free hot path the on-device demo points at next
-- [ ] Backward pass: recompute `P` from `O` + logsumexp per the paper's Appendix B, then a real autograd.Function
+- [ ] Backward pass CUDA kernel + autograd.Function. The algorithm half is done, the same CPU-first way the forward was: [src/flash_cpu_bwd.cpp](src/flash_cpu_bwd.cpp) recomputes `P` from the logsumexp and matches analytic double-precision gradients at ~1e-6 across both mask modes, with the analytic reference itself grounded in finite differences (`make test`)
 - [ ] Close the gap to SDPA's mem-efficient kernel: >1 query row per thread, vectorized (float4) loads, and occupancy/register tuning. The N=512 1.8× is the target
 - [ ] Block size tuning (CUDA and the Triton ~3× gap are a config problem) + head dim 128
 - [ ] fp16/bf16 with tensor-core matmuls on Ampere+ (the fp32 kernel is the correctness baseline; fp32 is also all a T4 can show)
