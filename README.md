@@ -64,16 +64,20 @@ So, essentially I did not have to "discover" whether FlashAttention was mathemat
 
 ## PyTorch
 
-The kernel is a drop-in op with the same layout contract as `scaled_dot_product_attention` and explicit heads:
+The kernel is a drop-in op with the same layout contract as `scaled_dot_product_attention` and explicit heads, and it is **differentiable** -- a `torch.autograd.Function`, so it trains inside an `nn.Module` like SDPA does:
 
 ```python
 import sys; sys.path.insert(0, "pytorch")
 from flash_attn import flash_attention
 
-o = flash_attention(q, k, v, causal=True)   # [batch, heads, seq, head_dim] fp32 CUDA
+o = flash_attention(q, k, v, causal=True)   # [batch, heads, seq, head_dim] fp32
+o.sum().backward()                          # dQ/dK/dV via the Appendix B backward
 ```
 
-The extension JIT-compiles on first import (needs `nvcc`, a CUDA build of torch, and `pip install ninja`, which torch's extension builder requires), launches on torch's current stream, and validates its whole contract up front. `python3 pytorch/test_parity.py` checks it against a **float64** reference with SDPA alongside as the sanity anchor; add `bench` for a timing table vs SDPA. Inference-only until the backward kernel lands.
+The forward saves `O` and the per-row logsumexp; the backward node recomputes `P` from them (paper Appendix B), so nothing N×N is stored on either pass. Two backends dispatch by device: **CUDA** tensors run the hand kernels (`flash_fwd.cu` + `flash_bwd.cu`), **CPU** tensors run the validated C++ algorithm (`flash_cpu.cpp` + `flash_cpu_bwd.cpp`). The right extension JIT-compiles on first use; the CPU one needs only a host compiler and `pip install ninja`, so the op runs and *gradchecks* with no GPU in the loop.
+
+- `python3 pytorch/test_parity.py` checks the forward against a **float64** reference with SDPA alongside as the sanity anchor (needs a GPU); add `bench` for a timing table vs SDPA.
+- `python3 pytorch/test_train.py` proves the training path with **no GPU**: `torch.autograd.gradcheck` (finite differences of the forward vs the analytic backward), gradient parity against autograd through the float64 reference (~1e-6 on dQ/dK/dV), and a training loop that fits q/k/v to a reachable target and watches the loss fall ~10⁴×.
 
 ## The paper's future work, answered: Triton
 
@@ -194,9 +198,11 @@ tests/
   test_cpu_fast.cpp fast kernel vs reference, tile-boundary shapes
   test_gpu.cu       fwd and bwd kernels vs reference, same shapes + N=1024
 pytorch/
-  binding.cpp     torch extension: contract checks + current-stream launch
-  flash_attn.py   JIT front door: flash_attention(q, k, v, causal)
-  test_parity.py  vs float64 reference, SDPA as sanity anchor (+ bench)
+  binding.cpp     CUDA extension: forward -> (O, lse) + backward, stream launch
+  binding_cpu.cpp CPU extension: same two entry points through the C++ algorithm
+  flash_attn.py   autograd.Function front door: differentiable flash_attention()
+  test_parity.py  forward vs float64 reference, SDPA as sanity anchor (+ bench)
+  test_train.py   trainable path with no GPU: gradcheck, grad parity, train loop
 triton/
   flash_attn_triton.py  the same algorithm through a compiler
   test_parity.py        three implementations, one float64 judge
@@ -211,7 +217,7 @@ edge/
 - [x] End-to-end on-device: a real TinyStories transformer through the CPU kernel, verified against llama2.c
 - [ ] KV-cache decode kernel: the recompute-free hot path the on-device demo points at next
 - [x] Backward pass, CPU-first like the forward: [src/flash_cpu_bwd.cpp](src/flash_cpu_bwd.cpp) proves the algorithm (logsumexp recompute of `P`, `D = rowsum(dO∘O)`) against analytic double-precision gradients grounded in finite differences (~1e-6, `make test`); [src/flash_bwd.cu](src/flash_bwd.cu) is that algorithm on device -- a dQ pass over query rows and a dK/dV pass over key rows, opposite reductions so nothing needs an atomic (`make test-gpu` on real hardware)
-- [ ] autograd.Function over the backward kernels, making the PyTorch op trainable
+- [x] autograd.Function over the backward kernels, making the PyTorch op trainable: [pytorch/flash_attn.py](pytorch/flash_attn.py) records a backward node (save `O` + logsumexp, recompute in Appendix B), dispatching to the CUDA kernels or the C++ CPU backend by device. Proven GPU-free by [pytorch/test_train.py](pytorch/test_train.py) -- gradcheck, grad parity vs a float64 reference, and a converging training loop
 - [ ] Close the gap to SDPA's mem-efficient kernel: >1 query row per thread, vectorized (float4) loads, and occupancy/register tuning. The N=512 1.8× is the target
 - [ ] Block size tuning (CUDA and the Triton ~3× gap are a config problem) + head dim 128
 - [ ] fp16/bf16 with tensor-core matmuls on Ampere+ (the fp32 kernel is the correctness baseline; fp32 is also all a T4 can show)
