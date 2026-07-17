@@ -37,6 +37,7 @@ def check(b, h, n, d, causal):
     return 0 if ok else 1
 
 
+@torch.no_grad()  # inference timing: don't build the autograd graph
 def bench(b, h, n, d):
     q, k, v = (torch.randn(b, h, n, d, device="cuda") for _ in range(3))
     for fn, name in ((lambda: flash_attention(q, k, v), "ours"),

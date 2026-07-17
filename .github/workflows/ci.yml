@@ -9,6 +9,18 @@ jobs:
       - name: reference vs tiled algorithm
         run: make test
 
+  torch-cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install torch (cpu) + ninja
+        run: pip install --index-url https://download.pytorch.org/whl/cpu torch && pip install ninja
+      - name: trainable op -- gradcheck, grad parity vs f64, training loop
+        run: cd pytorch && python3 test_train.py
+
   cuda-compile:
     runs-on: ubuntu-latest
     steps:
