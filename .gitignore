@@ -2,6 +2,7 @@ build/
 *.o
 *.d
 .DS_Store
+__pycache__/
 
 # On-device demo: model weights and tokenizer are downloaded, not committed.
 edge/*.bin
