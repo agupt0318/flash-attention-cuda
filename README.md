@@ -7,7 +7,7 @@
 ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/agupt0318/flash-attention-cuda/blob/main/demo/flash_attention_colab.ipynb)
 
-**[Try it in your browser →](https://agupt0318.github.io/flash-attention-cuda/)** No GPU, no toolchain: run the same attention row the textbook way and this kernel's way, watch the far-memory counters, and see the parity check pass live ([docs/index.html](docs/index.html)).
+**[Interactive demo](https://agupt0318.github.io/flash-attention-cuda/)**: runs one attention row with both the naive method and this kernel's streaming method, in the browser, and checks that the outputs match ([docs/index.html](docs/index.html)). No GPU or toolchain needed.
 
 <p align="center">
   <img src="assets/tiling.svg" width="880" alt="Animated view of the kernel: a query tile pinned in registers while K/V tiles stream through SRAM; the online-softmax statistics update and the output sharpens tile by tile">

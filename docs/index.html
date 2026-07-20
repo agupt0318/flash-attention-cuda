@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>flash-attention-cuda — the matrix that never gets built</title>
+<title>flash-attention-cuda: interactive demo</title>
 <style>
   /* A bench instrument, styled like the datasheet for the kernel it explains.
      Graphite ground, copper for data in motion, steel for far memory,
@@ -204,21 +204,21 @@
 
   <header>
     <div class="titleblock">
-      <h1>flash-attention-cuda <em>/ the matrix that never gets built</em></h1>
+      <h1>flash-attention-cuda <em>/ interactive demo</em></h1>
       <div class="specs">
         <span class="spec">fwd + bwd kernels</span>
-        <span class="spec">fp32</span>
-        <span class="spec hot">exact, never approximate</span>
+        <span class="spec">fp32 &middot; d 32/64</span>
+        <span class="spec hot">no n&times;n materialization</span>
       </div>
     </div>
     <p class="premise">
-      When a language model reads <b>n</b> words, it compares every word with every
-      word: an <b>n&times;n grid of scores</b>. The grid is cheap to compute and brutal to
-      <b>store</b>. This project is a GPU kernel, written from scratch, built on one
-      refusal: <b>the grid never gets written down</b>. Words stream through a tiny
-      on-chip memory, a running summary is carried in registers, and the final answer
-      comes out identical to the long way. The instrument below runs both ways, live,
-      and checks them against each other.
+      Attention compares each of <b>n</b> words with every other word, which produces
+      an <b>n&times;n matrix of scores</b>. Computing the scores is cheap; storing the
+      matrix is the bottleneck. FlashAttention computes the same result without
+      storing it: K and V stream through on-chip memory in tiles while a running max,
+      sum, and output accumulator stay in registers. This repo implements that kernel
+      from scratch in CUDA. The demo below runs both methods on the same data, in
+      this page, and compares the outputs.
     </p>
   </header>
 
@@ -226,8 +226,8 @@
   <section class="fig">
     <div class="fig-cap">
       <span class="no">FIG. 1</span>
-      <span class="t">SAME QUESTION, TWO WAYS</span>
-      <span class="d">real arithmetic, running in this page; press run and watch the counters</span>
+      <span class="t">NAIVE VS STREAMED</span>
+      <span class="d">one attention row, d=64, computed live in this page; both counters are exact</span>
     </div>
     <div class="board">
       <div class="ctl">
@@ -238,23 +238,23 @@
           <button data-n="1024" aria-pressed="true">1,024<small>a page</small></button>
           <button data-n="4096" aria-pressed="false">4,096<small>a chapter</small></button>
         </div>
-        <button class="runbtn" id="run">RUN BOTH</button>
+        <button class="runbtn" id="run">RUN</button>
       </div>
 
-      <!-- lane: textbook -->
+      <!-- lane: naive -->
       <div class="lane naive">
         <div class="lane-head">
-          <div class="nm">THE TEXTBOOK WAY</div>
-          <div class="sub">Compute all the scores, park the whole grid in far
-            memory, then walk back over it.</div>
+          <div class="nm">NAIVE ATTENTION</div>
+          <div class="sub">Compute all n scores, store the full matrix in main
+            memory, then softmax and take the weighted sum.</div>
         </div>
         <div class="lot">
           <div class="gridbox" id="lot" aria-hidden="true"></div>
-          <div class="cap" id="lot-cap">the n&times;n grid, parked (schematic; the count on the right is real)</div>
+          <div class="cap" id="lot-cap">score matrix (schematic; the counter on the right is exact)</div>
         </div>
         <div class="odo">
           <div class="big" id="odo-naive">0</div>
-          <div class="unit">numbers parked in far memory</div>
+          <div class="unit">intermediate values stored</div>
           <div class="note" id="odo-naive-note"></div>
         </div>
       </div>
@@ -262,9 +262,9 @@
       <!-- lane: flash -->
       <div class="lane flash">
         <div class="lane-head">
-          <div class="nm">THIS KERNEL</div>
-          <div class="sub">Stream the words through on-chip memory in tiles.
-            Keep a running summary. Park nothing.</div>
+          <div class="nm">STREAMED (THIS KERNEL)</div>
+          <div class="sub">Process K/V in tiles through on-chip memory, keeping a
+            running max, sum, and output accumulator.</div>
         </div>
         <div>
           <div class="conveyor">
@@ -272,22 +272,22 @@
             <span class="arrow">&rarr;</span>
             <div class="sram">
               <div class="t">on-chip (SRAM)</div>
-              <div class="row"><span class="k">high score m</span><span id="s-m">&mdash;</span></div>
-              <div class="row"><span class="k">total &#8467;</span><span id="s-l">&mdash;</span></div>
-              <div class="row"><span class="k">answer so far</span><span id="s-a">&mdash;</span></div>
+              <div class="row"><span class="k">running max m</span><span id="s-m">-</span></div>
+              <div class="row"><span class="k">sum &#8467;</span><span id="s-l">-</span></div>
+              <div class="row"><span class="k">vs reference</span><span id="s-a">-</span></div>
             </div>
           </div>
-          <div class="conveyor-cap">each tile visits fast memory once, then is done with</div>
+          <div class="conveyor-cap">each K/V tile is loaded into SRAM once</div>
         </div>
         <div class="odo">
           <div class="big" id="odo-flash">0</div>
-          <div class="unit">numbers parked in far memory</div>
-          <div class="note">a few dozen numbers ride along in registers, no matter the length</div>
+          <div class="unit">intermediate values stored</div>
+          <div class="note">the running state stays in registers regardless of n</div>
         </div>
       </div>
 
       <div class="verdict">
-        <div class="test" id="test-line">press RUN BOTH to compute the same attention row both ways</div>
+        <div class="test" id="test-line">press RUN to compute one attention row with both methods</div>
         <div class="sum" id="sum-line"></div>
       </div>
     </div>
@@ -297,26 +297,26 @@
   <section class="fig">
     <div class="fig-cap">
       <span class="no">FIG. 2</span>
-      <span class="t">MEASURED ON REAL SILICON</span>
-      <span class="d">Colab T4, fp32 forward, 4,096 words &times; 32 attention heads, from the repo's own benchmark</span>
+      <span class="t">T4 BENCHMARK</span>
+      <span class="d">Colab T4, fp32 forward, B=4 H=8 N=4096 d=64, from the repo's benchmark table</span>
     </div>
     <div class="board">
       <div class="bench">
         <div class="bench-group">
-          <div class="g-lbl">time for the pass (lower is better)</div>
+          <div class="g-lbl">forward time (lower is better)</div>
           <div id="bars-time"></div>
         </div>
         <div class="bench-group">
-          <div class="g-lbl">memory the pass needs at its peak</div>
+          <div class="g-lbl">peak memory</div>
           <div id="bars-mem"></div>
         </div>
         <p class="bench-note">
-          Read it plainly: on short passages the textbook way is actually
-          <b>fastest</b> (1.1&nbsp;ms at 512 words), and PyTorch's production kernel still
-          edges this one by about 5%. The win lives in the memory column: at 4,096
-          words the textbook way needs <b>4.13&nbsp;GiB</b> of scratch space and this
-          kernel needs <b>none beyond its inputs</b>. Double the passage again and the
-          textbook way runs out of GPU. This kernel just keeps streaming.
+          At short sequences the naive version is fastest (1.1&nbsp;ms at N=512), and
+          torch SDPA is about 5% faster than this kernel at every length. The
+          difference is memory: at N=4096 the naive version allocates
+          <b>4.13&nbsp;GiB</b> for score matrices, while the flash-family kernels
+          allocate <b>0.13&nbsp;GiB</b>, which is the inputs and output. At this batch
+          size, N=8192 naive would exceed the T4's 16&nbsp;GiB.
         </p>
       </div>
     </div>
@@ -326,16 +326,16 @@
   <section class="fig">
     <div class="fig-cap">
       <span class="no">FIG. 3</span>
-      <span class="t">BUILT WITHOUT A GPU</span>
-      <span class="d">the part that makes this repo unusual</span>
+      <span class="t">DEVELOPMENT NOTES</span>
+      <span class="d">built without local GPU hardware</span>
     </div>
     <div class="board">
       <div class="log">
-        <div class="line"><span class="d">day 1</span><span class="m">No NVIDIA hardware on hand. The algorithm is <b>proved on CPU first</b>, in float, against a double-precision referee, to one part in a million.</span></div>
-        <div class="line"><span class="d">day 1</span><span class="m">The CUDA kernel is written and <b>compiled blind in CI</b>. The laptop that wrote it cannot run it.</span></div>
-        <div class="line"><span class="d">day 2</span><span class="m"><b>First execution ever</b> is on a free Colab T4. Every test green on that first run.</span></div>
-        <div class="line"><span class="d">day 2</span><span class="m">The profiler says the kernel is waiting, so v2 <b>splits each row across a pair of threads</b>. The scheduler gets twice the warps to hide latency with.</span></div>
-        <div class="line"><span class="d">now</span><span class="m">This page runs the <b>same streaming recurrence in JavaScript</b>, checked the same way: against a double-precision referee, every time you press run.</span></div>
+        <div class="line"><span class="d">day 1</span><span class="m">No local NVIDIA hardware. The algorithm is implemented and <b>validated on CPU first</b>, in float, against a float64 reference (max error ~1e-6).</span></div>
+        <div class="line"><span class="d">day 1</span><span class="m">The CUDA kernel is <b>compiled in CI</b> (nvcc, no GPU) and its SASS reviewed offline.</span></div>
+        <div class="line"><span class="d">day 2</span><span class="m"><b>First run on a Colab T4</b>: all tests pass.</span></div>
+        <div class="line"><span class="d">day 2</span><span class="m">Nsight shows low scheduler occupancy, so v2 <b>splits each row across two threads</b>, roughly halving per-thread register use.</span></div>
+        <div class="line"><span class="d">now</span><span class="m">This page runs the <b>same streaming recurrence in JavaScript</b> and checks it against a float64 reference on every run.</span></div>
       </div>
     </div>
   </section>
@@ -362,10 +362,10 @@
     return {q,K,V,n};
   }
 
-  // ---- the textbook way: park every score, two passes (float64 referee)
+  // ---- naive attention: store every score, two-pass softmax (float64 reference)
   function naiveRow(p){
     const {q,K,V,n} = p, scale = 1/Math.sqrt(D);
-    const scores = new Float64Array(n);            // the parked row
+    const scores = new Float64Array(n);            // the stored score row
     let m = -Infinity;
     for (let j=0;j<n;j++){
       let dot = 0;
@@ -445,9 +445,8 @@
     kvTiles.forEach(t=>{t.className="kvt";});
     odoN.textContent = "0"; odoF.textContent = "0";
     odoNnote.textContent = "";
-    sM.textContent = sL.textContent = sA.textContent = "—";
-    testLine.textContent = "press RUN BOTH to compute the same attention row both ways";
-    testLine.innerHTML = testLine.textContent;
+    sM.textContent = sL.textContent = sA.textContent = "-";
+    testLine.textContent = "press RUN to compute one attention row with both methods";
     sumLine.textContent = "";
   }
 
@@ -466,7 +465,7 @@
     resetBoard();
 
     const p = makeProblem(N);
-    const exact = naiveRow(p);                       // referee (float64)
+    const exact = naiveRow(p);                       // float64 reference
     const stepper = flashRowStepper(p, Math.ceil(N/VIS_TILES));
     const totalParked = N*N;
 
@@ -483,7 +482,7 @@
       const st = stepper.step();
       sM.textContent = st.m.toFixed(3);
       sL.textContent = st.l.toFixed(1);
-      // live error vs referee, shrinking as tiles fold in
+      // live error vs the reference, shrinking as tiles fold in
       const partial = stepper.output();
       let err = 0; for(let c=0;c<D;c++) err = Math.max(err, Math.abs(partial[c]-exact[c]));
       sA.textContent = st.done ? "exact" : "±"+err.toExponential(1);
@@ -492,19 +491,19 @@
     }
     kvTiles.forEach(t=>{ t.className = "kvt spent"; });
     odoN.textContent = fmt(totalParked);
-    odoNnote.textContent = bytesHuman(totalParked) + " of scratch, for one attention head";
+    odoNnote.textContent = bytesHuman(totalParked) + " of fp32 scratch for one head";
 
-    // final parity check, styled like the repo's test output
+    // final parity check, same format as the repo's test output
     const ours = stepper.output();
     let err = 0; for(let c=0;c<D;c++) err = Math.max(err, Math.abs(ours[c]-exact[c]));
     const pass = err < 5e-5;                          // the repo's own GPU tolerance
     testLine.innerHTML =
-      `streamed fp32 vs float64 referee   N=${fmt(N)} d=${D}   ` +
+      `streamed fp32 vs float64 reference   N=${fmt(N)} d=${D}   ` +
       (pass ? `<span class="ok">ok</span>` : `FAIL`) +
       `   max |&Delta;| ${err.toExponential(2)}`;
     sumLine.innerHTML =
-      `Same answer. The textbook way parked <b>${fmt(totalParked)}</b> numbers to get it. ` +
-      `This way parked <b>0</b>.`;
+      `Outputs match. Naive stored <b>${fmt(totalParked)}</b> intermediate values; ` +
+      `streamed stored <b>0</b>.`;
 
     running = false; runBtn.disabled = false;
     runBtn.textContent = "RUN AGAIN";
@@ -513,13 +512,13 @@
 
   // ---- FIG 2: honest T4 numbers from the README benchmark --------------
   const TIME = [                                  // N=4096 row of the table
-    { who:"naive (textbook)", v:83.251, cls:"steel" },
+    { who:"naive", v:83.251, cls:"steel" },
     { who:"triton (ours)",    v:135.868, cls:"steel" },
     { who:"cuda (ours)",      v:47.714, us:true },
     { who:"torch SDPA",       v:45.492, cls:"steel" },
   ];
   const MEM = [
-    { who:"naive (textbook)", v:4.13, fmt:"4.13 GiB", cls:"steel" },
+    { who:"naive", v:4.13, fmt:"4.13 GiB", cls:"steel" },
     { who:"cuda (ours)",      v:0.13, fmt:"0.13 GiB", us:true },
     { who:"torch SDPA",       v:0.13, fmt:"0.13 GiB", cls:"steel" },
   ];
