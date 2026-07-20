@@ -6,6 +6,7 @@
 ![cuda](https://img.shields.io/badge/CUDA-fp32%20forward-76b900)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/agupt0318/flash-attention-cuda/blob/main/demo/flash_attention_colab.ipynb)
+[![demo](https://img.shields.io/badge/demo-agupt0318.github.io%2Fflash--attention--cuda-blue)](https://agupt0318.github.io/flash-attention-cuda/)
 
 **[Interactive demo](https://agupt0318.github.io/flash-attention-cuda/)**: runs one attention row with both the naive method and this kernel's streaming method, in the browser, and checks that the outputs match ([docs/index.html](docs/index.html)). No GPU or toolchain needed.
 
