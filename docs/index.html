@@ -3,356 +3,279 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>flash-attention-cuda: interactive demo</title>
+<title>flash-attention-cuda: technical demo</title>
 <style>
-  /* A bench instrument, styled like the datasheet for the kernel it explains.
-     Graphite ground, copper for data in motion, steel for far memory,
-     phosphor green reserved for a passing test. */
-  :root {
-    --bg: #101214;
-    --panel: #16191d;
-    --panel-2: #1b1f24;
-    --rule: #2a2f36;
-    --rule-soft: #22262c;
-    --ink: #e9e5dc;
-    --muted: #a49d90;
-    --faint: #6e6a60;
-    --copper: #d98a49;
-    --copper-hi: #f0a866;
-    --copper-dim: rgba(217,138,73,.14);
-    --steel: #8299ad;
-    --steel-dim: rgba(130,153,173,.13);
-    --pass: #6fc98a;
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-    --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  html { color-scheme: light dark; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         font-size: 16px; line-height: 1.6; color: #111; background: #fff;
+         margin: 0; }
+  .page { max-width: 760px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.15rem; margin: 2.2rem 0 .6rem; border-bottom: 1px solid #ccc;
+       padding-bottom: .25rem; }
+  p { margin: .7rem 0; max-width: 70ch; }
+  .subtitle { color: #555; margin-top: 0; }
+  a { color: #0645ad; }
+  code, pre, table.data, .bars { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  code { font-size: .9em; background: #f2f2f2; padding: 0 .25em; }
+  pre { background: #f6f6f6; border: 1px solid #ddd; padding: .6rem .8rem;
+        font-size: .85rem; overflow-x: auto; }
+  ul { max-width: 70ch; }
+  li { margin: .3rem 0; }
+
+  /* tables */
+  table { border-collapse: collapse; font-size: .85rem; margin: .8rem 0; }
+  caption { text-align: left; font-size: .85rem; color: #555; margin-bottom: .35rem;
+            caption-side: top; }
+  th, td { border: 1px solid #bbb; padding: .35rem .6rem; text-align: right; }
+  th { background: #f2f2f2; font-weight: 600; }
+  th:first-child, td:first-child { text-align: left; }
+  td.num { font-family: ui-monospace, Menlo, Consolas, monospace;
+           font-variant-numeric: tabular-nums; }
+  .tablewrap { overflow-x: auto; }
+  tr.ours td { background: #fdf6ec; }
+
+  /* bar charts: label | bar | value, everything printed */
+  .chart { margin: 1rem 0 1.4rem; }
+  .chart .title { font-size: .9rem; font-weight: 600; margin-bottom: .1rem; }
+  .chart .axis { font-size: .8rem; color: #555; margin-bottom: .5rem; }
+  .bars { display: grid; grid-template-columns: 11em 1fr 6.5em; gap: .3rem .6rem;
+          align-items: center; font-size: .82rem; }
+  .bars .lbl { text-align: right; white-space: nowrap; overflow: hidden;
+               text-overflow: ellipsis; }
+  .bars .track { border: 1px solid #bbb; height: 1.05em; background: #fff; }
+  .bars .track i { display: block; height: 100%; background: #999; }
+  .bars .track i.ours { background: #333; }
+  .bars .val { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .chart .note { font-size: .8rem; color: #555; margin-top: .4rem; }
+
+  /* live demo controls */
+  .demo { border: 1px solid #bbb; padding: .8rem 1rem; margin: 1rem 0; }
+  .demo .row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center;
+               margin-bottom: .6rem; font-size: .9rem; }
+  select, button { font: inherit; font-size: .9rem; }
+  button { padding: .15rem .8rem; }
+  #steps td { font-family: ui-monospace, Menlo, Consolas, monospace;
+              font-variant-numeric: tabular-nums; }
+  .ok { color: #067d17; font-weight: 600; }
+
+  footer { margin-top: 3rem; border-top: 1px solid #ccc; padding-top: .8rem;
+           font-size: .85rem; color: #555; }
+
+  @media (prefers-color-scheme: dark) {
+    body { background: #191919; color: #ddd; }
+    .subtitle, .chart .axis, .chart .note, caption, footer { color: #999; }
+    a { color: #7db4e8; }
+    code { background: #2a2a2a; }
+    pre { background: #222; border-color: #444; }
+    h2 { border-color: #444; }
+    th, td { border-color: #555; }
+    th { background: #2a2a2a; }
+    tr.ours td { background: #2b2517; }
+    .bars .track { border-color: #555; background: #191919; }
+    .bars .track i { background: #777; }
+    .bars .track i.ours { background: #ddd; }
+    .demo { border-color: #555; }
+    .ok { color: #5fb96a; }
   }
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #edeae3; --panel: #f5f3ed; --panel-2: #faf8f3; --rule: #d4cfc3;
-      --rule-soft: #ddd8cd; --ink: #23252a; --muted: #6a675e; --faint: #97928a;
-      --copper: #b0672a; --copper-hi: #8f5320; --copper-dim: rgba(176,103,42,.12);
-      --steel: #5b7488; --steel-dim: rgba(91,116,136,.12); --pass: #2c8a52;
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #101214; --panel: #16191d; --panel-2: #1b1f24; --rule: #2a2f36;
-    --rule-soft: #22262c; --ink: #e9e5dc; --muted: #a49d90; --faint: #6e6a60;
-    --copper: #d98a49; --copper-hi: #f0a866; --copper-dim: rgba(217,138,73,.14);
-    --steel: #8299ad; --steel-dim: rgba(130,153,173,.13); --pass: #6fc98a;
-  }
-  :root[data-theme="light"] {
-    --bg: #edeae3; --panel: #f5f3ed; --panel-2: #faf8f3; --rule: #d4cfc3;
-    --rule-soft: #ddd8cd; --ink: #23252a; --muted: #6a675e; --faint: #97928a;
-    --copper: #b0672a; --copper-hi: #8f5320; --copper-dim: rgba(176,103,42,.12);
-    --steel: #5b7488; --steel-dim: rgba(91,116,136,.12); --pass: #2c8a52;
-  }
-
-  * { box-sizing: border-box; }
-  html, body { margin: 0; }
-  body { background: var(--bg); color: var(--ink); font-family: var(--mono);
-         line-height: 1.55; font-size: 15px; -webkit-font-smoothing: antialiased; }
-  .wrap { max-width: 1060px; margin: 0 auto; padding: 34px 20px 60px; }
-  a { color: var(--copper); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-
-  /* ---- title block (datasheet) ---- */
-  .titleblock { border-top: 3px double var(--rule); border-bottom: 3px double var(--rule);
-                padding: 16px 0 14px; display: flex; flex-wrap: wrap;
-                align-items: baseline; gap: 8px 22px; }
-  .titleblock h1 { margin: 0; font-size: clamp(1.15rem, 3.4vw, 1.55rem);
-                   font-weight: 700; letter-spacing: .02em; }
-  .titleblock h1 em { font-style: normal; color: var(--copper); }
-  .specs { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
-  .spec { font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
-          color: var(--muted); border: 1px solid var(--rule); padding: 3px 9px;
-          border-radius: 3px; white-space: nowrap; }
-  .spec.hot { color: var(--copper); border-color: var(--copper); }
-
-  .premise { font-family: var(--ui); font-size: 1.05rem; color: var(--muted);
-             max-width: 68ch; margin: 22px 0 0; }
-  .premise b { color: var(--ink); font-weight: 600; }
-
-  /* ---- figure chrome ---- */
-  .fig { margin-top: 44px; }
-  .fig-cap { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-             margin-bottom: 12px; }
-  .fig-cap .no { font-size: .7rem; letter-spacing: .18em; color: var(--copper);
-                 font-weight: 700; }
-  .fig-cap .t { font-size: 1.02rem; font-weight: 700; letter-spacing: .01em; }
-  .fig-cap .d { font-family: var(--ui); color: var(--muted); font-size: .9rem; }
-  .board { background: var(--panel); border: 1px solid var(--rule);
-           border-radius: 8px; overflow: hidden; }
-
-  /* ---- controls ---- */
-  .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
-         padding: 14px 18px; border-bottom: 1px solid var(--rule-soft);
-         background: var(--panel-2); }
-  .ctl .lbl { font-size: .68rem; letter-spacing: .15em; text-transform: uppercase;
-              color: var(--faint); }
-  .dial { display: inline-flex; border: 1px solid var(--rule); border-radius: 5px;
-          overflow: hidden; }
-  .dial button { font: inherit; font-size: .78rem; background: transparent; border: 0;
-                 color: var(--muted); padding: 7px 12px; cursor: pointer;
-                 border-right: 1px solid var(--rule); }
-  .dial button:last-child { border-right: 0; }
-  .dial button[aria-pressed="true"] { background: var(--copper); color: var(--bg); font-weight: 700; }
-  .dial button:focus-visible { outline: 2px solid var(--copper); outline-offset: -2px; }
-  .dial button small { display: block; font-size: .62rem; color: inherit; opacity: .75; }
-  .runbtn { font: inherit; font-size: .82rem; font-weight: 700; letter-spacing: .08em;
-            background: var(--copper); color: var(--bg); border: 0; border-radius: 5px;
-            padding: 9px 20px; cursor: pointer; margin-left: auto; }
-  .runbtn:hover { background: var(--copper-hi); }
-  .runbtn:disabled { opacity: .45; cursor: default; }
-  .runbtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-
-  /* ---- lanes ---- */
-  .lane { display: grid; grid-template-columns: 180px 1fr 210px; gap: 18px;
-          padding: 18px; align-items: center; }
-  .lane + .lane { border-top: 1px solid var(--rule-soft); }
-  @media (max-width: 820px) { .lane { grid-template-columns: 1fr; } }
-  .lane-head .nm { font-size: .82rem; font-weight: 700; letter-spacing: .04em; }
-  .lane-head .sub { font-family: var(--ui); font-size: .8rem; color: var(--muted);
-                    margin-top: 4px; line-height: 1.45; }
-  .lane.naive .nm { color: var(--steel); }
-  .lane.flash .nm { color: var(--copper); }
-
-  /* naive visual: the parking lot */
-  .lot { position: relative; }
-  .lot .gridbox { display: grid; grid-template-columns: repeat(24, 1fr); gap: 1px;
-                  border: 1px solid var(--rule); border-radius: 4px; padding: 4px;
-                  background: var(--bg); }
-  .lot .cell { aspect-ratio: 1; border-radius: 1px; background: var(--rule-soft);
-               transition: background .18s; }
-  .lot .cell.parked { background: var(--steel); }
-  .lot .cap { font-size: .68rem; color: var(--faint); margin-top: 6px; }
-
-  /* flash visual: the conveyor */
-  .conveyor { display: flex; align-items: center; gap: 10px; }
-  .kvtiles { display: flex; gap: 4px; flex: 1; min-width: 0; }
-  .kvt { flex: 1; height: 34px; border-radius: 3px; border: 1px solid var(--rule);
-         background: var(--bg); transition: all .2s; position: relative; }
-  .kvt.instove { border-color: var(--copper); background: var(--copper-dim);
-                 box-shadow: 0 0 0 1px var(--copper); }
-  .kvt.spent { background: transparent; border-style: dashed; opacity: .45; }
-  .arrow { color: var(--faint); flex: none; }
-  .sram { flex: none; width: 158px; border: 1px solid var(--copper); border-radius: 5px;
-          background: var(--copper-dim); padding: 8px 10px; }
-  .sram .t { font-size: .6rem; letter-spacing: .14em; text-transform: uppercase;
-             color: var(--copper); font-weight: 700; }
-  .sram .row { display: flex; justify-content: space-between; gap: 8px;
-               font-size: .72rem; color: var(--ink); margin-top: 3px;
-               font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .sram .row .k { color: var(--muted); }
-  .conveyor-cap { font-size: .68rem; color: var(--faint); margin-top: 6px; }
-
-  /* odometers */
-  .odo { text-align: right; }
-  .odo .big { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums;
-              letter-spacing: -.01em; line-height: 1.1; }
-  .lane.naive .odo .big { color: var(--steel); }
-  .lane.flash .odo .big { color: var(--copper); }
-  .odo .unit { font-size: .72rem; color: var(--muted); }
-  .odo .note { font-size: .68rem; color: var(--faint); margin-top: 6px;
-               font-family: var(--ui); }
-  @media (max-width: 820px) { .odo { text-align: left; } }
-
-  /* verdict */
-  .verdict { border-top: 1px solid var(--rule); background: var(--bg);
-             padding: 14px 18px; font-size: .82rem; }
-  .verdict .test { color: var(--muted); white-space: pre-wrap; word-break: break-word; }
-  .verdict .test .ok { color: var(--pass); font-weight: 700; }
-  .verdict .sum { font-family: var(--ui); color: var(--ink); margin-top: 8px; font-size: .95rem; }
-  .verdict .sum b { color: var(--copper); }
-
-  /* ---- fig 2: measured ---- */
-  .bench { padding: 18px; display: flex; flex-direction: column; gap: 22px; }
-  .bench-group .g-lbl { font-size: .68rem; letter-spacing: .15em; text-transform: uppercase;
-                        color: var(--faint); margin-bottom: 10px; }
-  .bar-row { display: grid; grid-template-columns: 130px 1fr 92px; gap: 12px;
-             align-items: center; padding: 4px 0; }
-  .bar-row .who { font-size: .78rem; color: var(--muted); text-align: right; }
-  .bar-row .who.us { color: var(--copper); font-weight: 700; }
-  .bar-track { height: 14px; background: var(--bg); border: 1px solid var(--rule-soft);
-               border-radius: 3px; overflow: hidden; }
-  .bar-track i { display: block; height: 100%; width: 0; border-radius: 2px;
-                 transition: width .8s cubic-bezier(.2,.7,.3,1); }
-  .bar-row .val { font-size: .78rem; font-variant-numeric: tabular-nums; color: var(--ink); }
-  .bench-note { font-family: var(--ui); font-size: .85rem; color: var(--muted);
-                border-top: 1px solid var(--rule-soft); padding-top: 14px; max-width: 72ch; }
-  .bench-note b { color: var(--ink); }
-
-  /* ---- build log ---- */
-  .log { padding: 18px; }
-  .log .line { display: grid; grid-template-columns: 92px 1fr; gap: 14px;
-               padding: 7px 0; border-bottom: 1px dashed var(--rule-soft);
-               font-size: .8rem; }
-  .log .line:last-child { border-bottom: 0; }
-  .log .d { color: var(--faint); font-variant-numeric: tabular-nums; }
-  .log .m { color: var(--muted); }
-  .log .m b { color: var(--ink); font-weight: 600; }
-
-  footer { margin-top: 46px; border-top: 3px double var(--rule); padding-top: 16px;
-           display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline;
-           font-size: .8rem; color: var(--faint); }
-  footer .ui { font-family: var(--ui); }
-
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="page">
 
-  <header>
-    <div class="titleblock">
-      <h1>flash-attention-cuda <em>/ interactive demo</em></h1>
-      <div class="specs">
-        <span class="spec">fwd + bwd kernels</span>
-        <span class="spec">fp32 &middot; d 32/64</span>
-        <span class="spec hot">no n&times;n materialization</span>
-      </div>
-    </div>
-    <p class="premise">
-      Attention compares each of <b>n</b> words with every other word, which produces
-      an <b>n&times;n matrix of scores</b>. Computing the scores is cheap; storing the
-      matrix is the bottleneck. FlashAttention computes the same result without
-      storing it: K and V stream through on-chip memory in tiles while a running max,
-      sum, and output accumulator stay in registers. This repo implements that kernel
-      from scratch in CUDA. The demo below runs both methods on the same data, in
-      this page, and compares the outputs.
-    </p>
-  </header>
+<h1>flash-attention-cuda</h1>
+<p class="subtitle">A from-scratch CUDA implementation of FlashAttention
+(<a href="https://arxiv.org/abs/2205.14135">Dao et al., 2022</a>).
+Source: <a href="https://github.com/agupt0318/flash-attention-cuda">github.com/agupt0318/flash-attention-cuda</a></p>
 
-  <!-- FIG 1: the experiment -->
-  <section class="fig">
-    <div class="fig-cap">
-      <span class="no">FIG. 1</span>
-      <span class="t">NAIVE VS STREAMED</span>
-      <span class="d">one attention row, d=64, computed live in this page; both counters are exact</span>
-    </div>
-    <div class="board">
-      <div class="ctl">
-        <span class="lbl">passage length</span>
-        <div class="dial" id="dial" role="group" aria-label="passage length">
-          <button data-n="64" aria-pressed="false">64<small>a sentence</small></button>
-          <button data-n="256" aria-pressed="false">256<small>a paragraph</small></button>
-          <button data-n="1024" aria-pressed="true">1,024<small>a page</small></button>
-          <button data-n="4096" aria-pressed="false">4,096<small>a chapter</small></button>
-        </div>
-        <button class="runbtn" id="run">RUN</button>
-      </div>
+<h2>1. The problem</h2>
+<p>
+Attention takes <i>n</i> word vectors and computes a score between every pair:
+an <i>n</i>&times;<i>n</i> matrix. The straightforward implementation stores that
+matrix in GPU main memory (HBM), applies softmax to it, and multiplies by V.
+The arithmetic is not the bottleneck. Moving the matrix to and from main memory
+is: memory traffic and memory footprint both grow with <i>n</i><sup>2</sup>,
+while everything else in the model grows roughly with <i>n</i>.
+</p>
+<div class="chart">
+  <div class="title">Memory needed to store the score matrix</div>
+  <div class="axis">fp32, one attention head. Bar length is proportional to megabytes (linear scale).</div>
+  <div class="bars" id="chart-mem-growth"></div>
+  <div class="note">Each doubling of sequence length quadruples the memory.
+  A model with 32 heads (as in the benchmark below) needs 32&times; these amounts.</div>
+</div>
 
-      <!-- lane: naive -->
-      <div class="lane naive">
-        <div class="lane-head">
-          <div class="nm">NAIVE ATTENTION</div>
-          <div class="sub">Compute all n scores, store the full matrix in main
-            memory, then softmax and take the weighted sum.</div>
-        </div>
-        <div class="lot">
-          <div class="gridbox" id="lot" aria-hidden="true"></div>
-          <div class="cap" id="lot-cap">score matrix (schematic; the counter on the right is exact)</div>
-        </div>
-        <div class="odo">
-          <div class="big" id="odo-naive">0</div>
-          <div class="unit">intermediate values stored</div>
-          <div class="note" id="odo-naive-note"></div>
-        </div>
-      </div>
+<h2>2. What we are trying to solve</h2>
+<p>
+Compute attention with the <b>same numerical result</b> as the straightforward
+version, without ever storing the <i>n</i>&times;<i>n</i> matrix in main memory.
+Extra memory use should stay constant in <i>n</i> (a fixed set of running
+values), so long sequences stop being limited by the score matrix.
+</p>
 
-      <!-- lane: flash -->
-      <div class="lane flash">
-        <div class="lane-head">
-          <div class="nm">STREAMED (THIS KERNEL)</div>
-          <div class="sub">Process K/V in tiles through on-chip memory, keeping a
-            running max, sum, and output accumulator.</div>
-        </div>
-        <div>
-          <div class="conveyor">
-            <div class="kvtiles" id="kvtiles" aria-hidden="true"></div>
-            <span class="arrow">&rarr;</span>
-            <div class="sram">
-              <div class="t">on-chip (SRAM)</div>
-              <div class="row"><span class="k">running max m</span><span id="s-m">-</span></div>
-              <div class="row"><span class="k">sum &#8467;</span><span id="s-l">-</span></div>
-              <div class="row"><span class="k">vs reference</span><span id="s-a">-</span></div>
-            </div>
-          </div>
-          <div class="conveyor-cap">each K/V tile is loaded into SRAM once</div>
-        </div>
-        <div class="odo">
-          <div class="big" id="odo-flash">0</div>
-          <div class="unit">intermediate values stored</div>
-          <div class="note">the running state stays in registers regardless of n</div>
-        </div>
-      </div>
+<h2>3. How it works</h2>
+<p>
+Softmax normally needs all <i>n</i> scores of a row before it can produce any
+output. The paper's observation is that it can be computed <b>incrementally</b>.
+For one query row, keep three running values:
+</p>
+<ul>
+  <li><code>m</code>: the largest score seen so far</li>
+  <li><code>&#8467;</code>: the sum of <code>exp(score − m)</code> over the scores seen so far</li>
+  <li><code>acc</code>: the output accumulated so far (unnormalized)</li>
+</ul>
+<p>
+K and V are processed in tiles small enough to fit in on-chip memory (SRAM,
+~100&times; faster than HBM). Each tile updates the three values; if a new tile
+contains a larger maximum, the history is rescaled by
+<code>exp(m_old − m_new)</code> before the tile is folded in. After the last
+tile, dividing <code>acc</code> by <code>&#8467;</code> gives exactly the softmax-weighted
+output. Scores are consumed as they are produced and never written to main
+memory. This is Algorithm 1 in the paper; the kernel in this repo keeps
+<code>m</code>, <code>&#8467;</code>, and <code>acc</code> in registers.
+</p>
 
-      <div class="verdict">
-        <div class="test" id="test-line">press RUN to compute one attention row with both methods</div>
-        <div class="sum" id="sum-line"></div>
-      </div>
-    </div>
-  </section>
+<div class="demo">
+  <div class="row">
+    <label for="nsel">Sequence length <i>n</i>:</label>
+    <select id="nsel">
+      <option value="64">64</option>
+      <option value="256">256</option>
+      <option value="1024" selected>1,024</option>
+      <option value="4096">4,096</option>
+    </select>
+    <button id="run">Run</button>
+    <span id="status"></span>
+  </div>
+  <div class="tablewrap">
+  <table id="steps-table">
+    <caption>Live run in this page: one query row, d = 64, processed in 8 tiles.
+    The last column compares the current partial output with a float64
+    computation of the full row.</caption>
+    <thead>
+      <tr><th>tile</th><th>keys processed</th><th>running max m</th>
+          <th>running sum &#8467;</th><th>max |error| vs float64</th></tr>
+    </thead>
+    <tbody id="steps"></tbody>
+  </table>
+  </div>
+  <pre id="parity">press Run</pre>
+  <table>
+    <caption>Intermediate values written to main memory during the run above</caption>
+    <thead><tr><th>method</th><th>values</th><th>size (fp32)</th></tr></thead>
+    <tbody>
+      <tr><td>naive (stores the score matrix)</td><td class="num" id="naive-vals">&ndash;</td><td class="num" id="naive-bytes">&ndash;</td></tr>
+      <tr><td>streamed (this kernel's method)</td><td class="num">0</td><td class="num">0</td></tr>
+    </tbody>
+  </table>
+</div>
 
-  <!-- FIG 2: measured -->
-  <section class="fig">
-    <div class="fig-cap">
-      <span class="no">FIG. 2</span>
-      <span class="t">T4 BENCHMARK</span>
-      <span class="d">Colab T4, fp32 forward, B=4 H=8 N=4096 d=64, from the repo's benchmark table</span>
-    </div>
-    <div class="board">
-      <div class="bench">
-        <div class="bench-group">
-          <div class="g-lbl">forward time (lower is better)</div>
-          <div id="bars-time"></div>
-        </div>
-        <div class="bench-group">
-          <div class="g-lbl">peak memory</div>
-          <div id="bars-mem"></div>
-        </div>
-        <p class="bench-note">
-          At short sequences the naive version is fastest (1.1&nbsp;ms at N=512), and
-          torch SDPA is about 5% faster than this kernel at every length. The
-          difference is memory: at N=4096 the naive version allocates
-          <b>4.13&nbsp;GiB</b> for score matrices, while the flash-family kernels
-          allocate <b>0.13&nbsp;GiB</b>, which is the inputs and output. At this batch
-          size, N=8192 naive would exceed the T4's 16&nbsp;GiB.
-        </p>
-      </div>
-    </div>
-  </section>
+<h2>4. Results</h2>
+<p>
+Measured on a Colab T4 (fp32 forward pass, batch 4, 8 heads, head dim 64), from
+the repository's benchmark. Full table:
+</p>
+<div class="tablewrap">
+<table>
+  <caption>Forward-pass time in milliseconds (lower is better) and naive peak memory, by sequence length N</caption>
+  <thead>
+    <tr><th>N</th><th>cuda (this repo)</th><th>triton (this repo)</th>
+        <th>torch SDPA</th><th>naive</th><th>naive peak memory</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>512</td><td class="num">2.115</td><td class="num">4.406</td><td class="num">1.610</td><td class="num">1.121</td><td class="num">0.09 GiB</td></tr>
+    <tr><td>1,024</td><td class="num">3.363</td><td class="num">8.646</td><td class="num">2.770</td><td class="num">4.705</td><td class="num">0.29 GiB</td></tr>
+    <tr><td>2,048</td><td class="num">12.592</td><td class="num">34.036</td><td class="num">11.335</td><td class="num">19.201</td><td class="num">1.07 GiB</td></tr>
+    <tr><td>4,096</td><td class="num">47.714</td><td class="num">135.868</td><td class="num">45.492</td><td class="num">83.251</td><td class="num">4.13 GiB</td></tr>
+  </tbody>
+</table>
+</div>
+<p>
+Peak memory for the three flash-style implementations stays between 0.02 and
+0.13&nbsp;GiB at every length (inputs and output only).
+</p>
 
-  <!-- build log -->
-  <section class="fig">
-    <div class="fig-cap">
-      <span class="no">FIG. 3</span>
-      <span class="t">DEVELOPMENT NOTES</span>
-      <span class="d">built without local GPU hardware</span>
-    </div>
-    <div class="board">
-      <div class="log">
-        <div class="line"><span class="d">day 1</span><span class="m">No local NVIDIA hardware. The algorithm is implemented and <b>validated on CPU first</b>, in float, against a float64 reference (max error ~1e-6).</span></div>
-        <div class="line"><span class="d">day 1</span><span class="m">The CUDA kernel is <b>compiled in CI</b> (nvcc, no GPU) and its SASS reviewed offline.</span></div>
-        <div class="line"><span class="d">day 2</span><span class="m"><b>First run on a Colab T4</b>: all tests pass.</span></div>
-        <div class="line"><span class="d">day 2</span><span class="m">Nsight shows low scheduler occupancy, so v2 <b>splits each row across two threads</b>, roughly halving per-thread register use.</span></div>
-        <div class="line"><span class="d">now</span><span class="m">This page runs the <b>same streaming recurrence in JavaScript</b> and checks it against a float64 reference on every run.</span></div>
-      </div>
-    </div>
-  </section>
+<div class="chart">
+  <div class="title">Forward-pass time at N = 4,096</div>
+  <div class="axis">milliseconds; lower is better. Colab T4, fp32, B=4, H=8, d=64.</div>
+  <div class="bars" id="chart-time"></div>
+</div>
 
-  <footer>
-    <span class="ui">The animation is schematic; every number on this page is computed or measured.</span>
-    <a href="https://github.com/agupt0318/flash-attention-cuda">source, tests, and the Colab notebook &rarr;</a>
-  </footer>
+<div class="chart">
+  <div class="title">Peak memory at N = 4,096</div>
+  <div class="axis">GiB allocated during the pass. Same configuration.</div>
+  <div class="bars" id="chart-peak"></div>
+</div>
+
+<p>Read plainly:</p>
+<ul>
+  <li>At N=512 the naive version is the fastest of the four. The method only
+      pays off once the score matrix is large.</li>
+  <li>torch SDPA is about 5% faster than this repo's CUDA kernel at every
+      length. That is the expected result; SDPA is the production
+      implementation of the same algorithm.</li>
+  <li>The memory difference is the point: 4.13&nbsp;GiB vs 0.13&nbsp;GiB at
+      N=4,096. At N=8,192 with this batch size the naive version would need
+      more than the T4's 16&nbsp;GiB and fail; the streamed versions are
+      unaffected.</li>
+  <li>Correctness: CPU tests pass at 1e-6 against a float64 reference, GPU
+      tests at 5e-5, and the backward pass passes
+      <code>torch.autograd.gradcheck</code>.</li>
+</ul>
+
+<h2>5. Existing solutions</h2>
+<div class="tablewrap">
+<table>
+  <caption>Ways to compute (or avoid) the same attention</caption>
+  <thead><tr><th>approach</th><th>exact</th><th>notes</th></tr></thead>
+  <tbody>
+    <tr><td>naive matmul + softmax</td><td>yes</td>
+        <td style="text-align:left">Simplest. Fastest at short lengths. O(n&sup2;) memory.</td></tr>
+    <tr><td>torch SDPA</td><td>yes</td>
+        <td style="text-align:left">Production FlashAttention inside PyTorch. What to use in practice.</td></tr>
+    <tr><td>flash-attention (official library)</td><td>yes</td>
+        <td style="text-align:left">The authors' maintained kernels; fp16/bf16 tensor-core focus; fastest available.</td></tr>
+    <tr><td>approximate attention (Linformer, Performer, sparse patterns)</td><td>no</td>
+        <td style="text-align:left">Reduce the O(n&sup2;) by approximating the matrix. Different accuracy trade-off; FlashAttention makes them unnecessary for many workloads.</td></tr>
+    <tr class="ours"><td>this repo: CUDA kernel</td><td>yes</td>
+        <td style="text-align:left">~120 lines of kernel. Written from scratch for understanding; ~5% behind SDPA on a T4.</td></tr>
+    <tr class="ours"><td>this repo: Triton version</td><td>yes</td>
+        <td style="text-align:left">Same algorithm through a compiler, ~70 lines. 2.8&times; slower here, but portable and much shorter.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>6. Why this exists</h2>
+<p>
+This is an educational implementation. The goal was to understand IO-aware
+kernel design by building it: the CPU version proves the algorithm against a
+float64 reference, the CUDA kernel implements it with explicit tiles and
+registers, the Triton version shows the same algorithm through a compiler, and
+the benchmark measures where the method wins and where it does not.
+</p>
+<p>
+It was also written without local GPU hardware: the algorithm was validated on
+CPU, the kernel compiled in CI, and the first actual execution was on a free
+Colab T4 (all tests passed on that run). A profiler pass on the T4 then led to
+v2 of the kernel, which splits each row across two threads to halve per-thread
+register use. For real workloads, use <code>torch.nn.functional.scaled_dot_product_attention</code>;
+this repo is for reading.
+</p>
+
+<footer>
+Every number on this page is either computed live in your browser (section 3)
+or copied from the repository's T4 benchmark run (section 4).
+<a href="https://github.com/agupt0318/flash-attention-cuda">Source, tests, and a Colab notebook.</a>
+</footer>
 
 </div>
 
 <script>
 (() => {
   "use strict";
-  const D = 64, VIS_TILES = 8, LOT_CELLS = 24 * 7;
+  const D = 64, TILES = 8;
 
-  // ---- deterministic problem data ------------------------------------
+  // ---- deterministic data --------------------------------------------
   function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
   function makeProblem(n){
     const r = mulberry32(0xA11CE ^ n);
@@ -362,29 +285,28 @@
     return {q,K,V,n};
   }
 
-  // ---- naive attention: store every score, two-pass softmax (float64 reference)
+  // naive: full score row, two-pass softmax, float64 (the reference)
   function naiveRow(p){
     const {q,K,V,n} = p, scale = 1/Math.sqrt(D);
-    const scores = new Float64Array(n);            // the stored score row
+    const s = new Float64Array(n);
     let m = -Infinity;
     for (let j=0;j<n;j++){
       let dot = 0;
       for (let c=0;c<D;c++) dot += q[c]*K[j*D+c];
-      scores[j] = dot*scale;
-      if (scores[j] > m) m = scores[j];
+      s[j] = dot*scale;
+      if (s[j] > m) m = s[j];
     }
     let l = 0;
-    for (let j=0;j<n;j++){ scores[j] = Math.exp(scores[j]-m); l += scores[j]; }
+    for (let j=0;j<n;j++){ s[j] = Math.exp(s[j]-m); l += s[j]; }
     const out = new Float64Array(D);
     for (let j=0;j<n;j++)
-      for (let c=0;c<D;c++) out[c] += scores[j]*V[j*D+c];
+      for (let c=0;c<D;c++) out[c] += s[j]*V[j*D+c];
     for (let c=0;c<D;c++) out[c] /= l;
     return out;
   }
 
-  // ---- this kernel's way: streamed online softmax in fp32 (Math.fround),
-  // the same recurrence flash_fwd.cu runs, one tile at a time.
-  function flashRowStepper(p, tile){
+  // streamed: the kernel's recurrence, forced to fp32 with Math.fround
+  function flashStepper(p, tile){
     const {q,K,V,n} = p, scale = 1/Math.sqrt(D), f = Math.fround;
     let m = -Infinity, l = 0, pos = 0;
     const acc = new Float32Array(D);
@@ -406,144 +328,97 @@
           for (let c=0;c<D;c++) acc[c] = f(acc[c] + f(e*V[j*D+c]));
         }
         pos = end;
-        return { m, l, pos, done: pos >= n };
+        return { m, l, pos };
       },
       output(){ const o = new Float64Array(D); for(let c=0;c<D;c++) o[c]=acc[c]/l; return o; }
     };
   }
 
-  // ---- DOM ------------------------------------------------------------
-  const lot = document.getElementById("lot");
-  for (let i=0;i<LOT_CELLS;i++){ const c=document.createElement("div"); c.className="cell"; lot.appendChild(c); }
-  const lotCells = [...lot.children];
-  const kv = document.getElementById("kvtiles");
-  for (let i=0;i<VIS_TILES;i++){ const t=document.createElement("div"); t.className="kvt"; kv.appendChild(t); }
-  const kvTiles = [...kv.children];
-
-  const odoN = document.getElementById("odo-naive");
-  const odoNnote = document.getElementById("odo-naive-note");
-  const odoF = document.getElementById("odo-flash");
-  const sM = document.getElementById("s-m"), sL = document.getElementById("s-l"), sA = document.getElementById("s-a");
-  const testLine = document.getElementById("test-line");
-  const sumLine = document.getElementById("sum-line");
-  const runBtn = document.getElementById("run");
-  const dial = document.getElementById("dial");
-
-  let N = 1024, running = false;
-  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const fmt = x => x.toLocaleString("en-US");
-  function bytesHuman(cells){
-    const b = cells*4;
-    if (b < 1<<20) return (b/1024).toFixed(0)+" KB";
-    if (b < 1<<30) return (b/1048576).toFixed(1)+" MB";
-    return (b/1073741824).toFixed(2)+" GB";
-  }
-
-  function resetBoard(){
-    lotCells.forEach(c=>c.classList.remove("parked"));
-    kvTiles.forEach(t=>{t.className="kvt";});
-    odoN.textContent = "0"; odoF.textContent = "0";
-    odoNnote.textContent = "";
-    sM.textContent = sL.textContent = sA.textContent = "-";
-    testLine.textContent = "press RUN to compute one attention row with both methods";
-    sumLine.textContent = "";
-  }
-
-  dial.addEventListener("click", e=>{
-    const b = e.target.closest("button"); if(!b || running) return;
-    N = +b.dataset.n;
-    [...dial.children].forEach(x=>x.setAttribute("aria-pressed", x===b ? "true":"false"));
-    resetBoard();
-  });
-
-  const sleep = ms => new Promise(r=>setTimeout(r, reduce ? 0 : ms));
-
-  async function run(){
-    if (running) return;
-    running = true; runBtn.disabled = true;
-    resetBoard();
-
-    const p = makeProblem(N);
-    const exact = naiveRow(p);                       // float64 reference
-    const stepper = flashRowStepper(p, Math.ceil(N/VIS_TILES));
-    const totalParked = N*N;
-
-    // animate 8 beats; both lanes advance together
-    const cellsPerBeat = Math.ceil(LOT_CELLS/VIS_TILES);
-    for (let beat=0; beat<VIS_TILES; beat++){
-      // naive lane: park another stripe of the grid
-      for (let i=beat*cellsPerBeat; i<Math.min(LOT_CELLS,(beat+1)*cellsPerBeat); i++)
-        lotCells[i].classList.add("parked");
-      odoN.textContent = fmt(Math.round(totalParked*(beat+1)/VIS_TILES));
-
-      // flash lane: this tile is in the stove
-      kvTiles.forEach((t,i)=>{ t.className = "kvt" + (i<beat ? " spent" : i===beat ? " instove" : ""); });
-      const st = stepper.step();
-      sM.textContent = st.m.toFixed(3);
-      sL.textContent = st.l.toFixed(1);
-      // live error vs the reference, shrinking as tiles fold in
-      const partial = stepper.output();
-      let err = 0; for(let c=0;c<D;c++) err = Math.max(err, Math.abs(partial[c]-exact[c]));
-      sA.textContent = st.done ? "exact" : "±"+err.toExponential(1);
-
-      await sleep(430);
-    }
-    kvTiles.forEach(t=>{ t.className = "kvt spent"; });
-    odoN.textContent = fmt(totalParked);
-    odoNnote.textContent = bytesHuman(totalParked) + " of fp32 scratch for one head";
-
-    // final parity check, same format as the repo's test output
-    const ours = stepper.output();
-    let err = 0; for(let c=0;c<D;c++) err = Math.max(err, Math.abs(ours[c]-exact[c]));
-    const pass = err < 5e-5;                          // the repo's own GPU tolerance
-    testLine.innerHTML =
-      `streamed fp32 vs float64 reference   N=${fmt(N)} d=${D}   ` +
-      (pass ? `<span class="ok">ok</span>` : `FAIL`) +
-      `   max |&Delta;| ${err.toExponential(2)}`;
-    sumLine.innerHTML =
-      `Outputs match. Naive stored <b>${fmt(totalParked)}</b> intermediate values; ` +
-      `streamed stored <b>0</b>.`;
-
-    running = false; runBtn.disabled = false;
-    runBtn.textContent = "RUN AGAIN";
-  }
-  runBtn.addEventListener("click", run);
-
-  // ---- FIG 2: honest T4 numbers from the README benchmark --------------
-  const TIME = [                                  // N=4096 row of the table
-    { who:"naive", v:83.251, cls:"steel" },
-    { who:"triton (ours)",    v:135.868, cls:"steel" },
-    { who:"cuda (ours)",      v:47.714, us:true },
-    { who:"torch SDPA",       v:45.492, cls:"steel" },
-  ];
-  const MEM = [
-    { who:"naive", v:4.13, fmt:"4.13 GiB", cls:"steel" },
-    { who:"cuda (ours)",      v:0.13, fmt:"0.13 GiB", us:true },
-    { who:"torch SDPA",       v:0.13, fmt:"0.13 GiB", cls:"steel" },
-  ];
-  function bars(rootId, rows, unit){
+  // ---- simple labeled bar charts ---------------------------------------
+  function chart(rootId, rows){
     const root = document.getElementById(rootId);
     const max = Math.max(...rows.map(r=>r.v));
     rows.forEach(r=>{
-      const row = document.createElement("div"); row.className="bar-row";
-      const who = document.createElement("div"); who.className="who"+(r.us?" us":""); who.textContent=r.who;
-      const track = document.createElement("div"); track.className="bar-track";
-      const fill = document.createElement("i");
-      fill.style.background = r.us ? "var(--copper)" : "var(--steel)";
+      const lbl = document.createElement("div"); lbl.className="lbl"; lbl.textContent=r.label;
+      const track = document.createElement("div"); track.className="track";
+      const fill = document.createElement("i"); if(r.ours) fill.className="ours";
+      fill.style.width = (r.v/max*100)+"%";
       track.appendChild(fill);
-      const val = document.createElement("div"); val.className="val";
-      val.textContent = r.fmt || (r.v.toFixed(1)+" "+unit);
-      row.append(who, track, val);
-      root.appendChild(row);
-      requestAnimationFrame(()=>requestAnimationFrame(()=>{ fill.style.width = (r.v/max*100)+"%"; }));
+      const val = document.createElement("div"); val.className="val"; val.textContent=r.text;
+      root.append(lbl, track, val);
     });
   }
-  bars("bars-time", TIME, "ms");
-  bars("bars-mem", MEM, "GiB");
+  chart("chart-mem-growth", [
+    {label:"n = 1,024",  v:4,    text:"4 MB"},
+    {label:"n = 2,048",  v:16,   text:"16 MB"},
+    {label:"n = 4,096",  v:64,   text:"64 MB"},
+    {label:"n = 8,192",  v:256,  text:"256 MB"},
+    {label:"n = 16,384", v:1024, text:"1,024 MB"},
+  ]);
+  chart("chart-time", [
+    {label:"torch SDPA",         v:45.492,  text:"45.5 ms"},
+    {label:"cuda (this repo)",   v:47.714,  text:"47.7 ms", ours:true},
+    {label:"naive",              v:83.251,  text:"83.3 ms"},
+    {label:"triton (this repo)", v:135.868, text:"135.9 ms", ours:true},
+  ]);
+  chart("chart-peak", [
+    {label:"cuda (this repo)", v:0.13, text:"0.13 GiB", ours:true},
+    {label:"torch SDPA",       v:0.13, text:"0.13 GiB"},
+    {label:"naive",            v:4.13, text:"4.13 GiB"},
+  ]);
 
-  // auto-run once so the page opens alive
-  setTimeout(run, reduce ? 0 : 700);
+  // ---- live demo --------------------------------------------------------
+  const stepsEl = document.getElementById("steps");
+  const parityEl = document.getElementById("parity");
+  const statusEl = document.getElementById("status");
+  const runBtn = document.getElementById("run");
+  const nsel = document.getElementById("nsel");
+  const fmt = x => x.toLocaleString("en-US");
+  let running = false;
+
+  function bytesText(vals){
+    const b = vals*4;
+    if (b < 1048576) return (b/1024).toFixed(0)+" KB";
+    return (b/1048576).toFixed(0)+" MB";
+  }
+
+  async function run(){
+    if (running) return;
+    running = true; runBtn.disabled = true; statusEl.textContent = "running";
+    stepsEl.innerHTML = ""; parityEl.textContent = "";
+
+    const n = +nsel.value;
+    const p = makeProblem(n);
+    const exact = naiveRow(p);
+    const st = flashStepper(p, Math.ceil(n/TILES));
+    const delay = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 220;
+
+    for (let t=1; t<=TILES; t++){
+      const {m, l, pos} = st.step();
+      const partial = st.output();
+      let err = 0; for(let c=0;c<D;c++) err = Math.max(err, Math.abs(partial[c]-exact[c]));
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${t}</td><td>${fmt(pos)} / ${fmt(n)}</td>`+
+        `<td>${m.toFixed(6)}</td><td>${l.toFixed(3)}</td>`+
+        `<td>${err.toExponential(2)}</td>`;
+      stepsEl.appendChild(tr);
+      if (delay) await new Promise(r=>setTimeout(r, delay));
+    }
+
+    const ours = st.output();
+    let err = 0; for(let c=0;c<D;c++) err = Math.max(err, Math.abs(ours[c]-exact[c]));
+    const pass = err < 5e-5;   // the repo's GPU test tolerance
+    parityEl.innerHTML = `streamed fp32 vs float64 reference   N=${fmt(n)} d=${D}   `+
+      (pass ? `<span class="ok">ok</span>` : "FAIL")+
+      `   max |&Delta;| ${err.toExponential(2)}   (tolerance 5e-5)`;
+    document.getElementById("naive-vals").textContent = fmt(n*n);
+    document.getElementById("naive-bytes").textContent = bytesText(n*n);
+
+    statusEl.textContent = "";
+    running = false; runBtn.disabled = false;
+  }
+  runBtn.addEventListener("click", run);
+  run();
 })();
 </script>
 </body>
