@@ -1,0 +1,93 @@
+{
+  "device": "mps",
+  "torch": "2.11.0",
+  "part_a": {
+    "prompt": "The key idea behind attention is that every token",
+    "tokens": 9,
+    "layers": 12,
+    "worst_maxdiff": 4.76837158203125e-07
+  },
+  "part_b": [
+    {
+      "N": 512,
+      "scores_matrix_mb": 12.6,
+      "standard_peak_mb": 12.8,
+      "standard_ms": 9.5,
+      "streamed_peak_mb": 14.2,
+      "streamed_ms": 20.1,
+      "maxdiff": "7.75e-07"
+    },
+    {
+      "N": 1024,
+      "scores_matrix_mb": 50.3,
+      "standard_peak_mb": 51.4,
+      "standard_ms": 41.4,
+      "streamed_peak_mb": 53.7,
+      "streamed_ms": 78.2,
+      "maxdiff": "5.96e-07"
+    },
+    {
+      "N": 2048,
+      "scores_matrix_mb": 201.3,
+      "standard_peak_mb": 205.5,
+      "standard_ms": 45.8,
+      "streamed_peak_mb": 108.2,
+      "streamed_ms": 98.9,
+      "maxdiff": "5.36e-07"
+    },
+    {
+      "N": 4096,
+      "scores_matrix_mb": 805.3,
+      "standard_peak_mb": 822.1,
+      "standard_ms": 60.0,
+      "streamed_peak_mb": 214.9,
+      "streamed_ms": 101.0,
+      "maxdiff": "1.37e-06"
+    },
+    {
+      "N": 8192,
+      "scores_matrix_mb": 3221.2,
+      "standard_peak_mb": 3288.3,
+      "standard_ms": 298.4,
+      "streamed_peak_mb": 429.9,
+      "streamed_ms": 313.4,
+      "maxdiff": "1.01e-06"
+    },
+    {
+      "N": 12288,
+      "scores_matrix_mb": 7247.8,
+      "standard_peak_mb": 7398.8,
+      "standard_ms": 1446.2,
+      "streamed_peak_mb": 644.2,
+      "streamed_ms": 1257.7,
+      "maxdiff": "1.43e-06"
+    },
+    {
+      "N": 16384,
+      "scores_matrix_mb": 12884.9,
+      "standard_peak_mb": "OOM",
+      "standard_ms": null,
+      "streamed_peak_mb": 858.9,
+      "streamed_ms": 2394.2,
+      "maxdiff": "n/a (standard OOM)"
+    },
+    {
+      "N": 20480,
+      "scores_matrix_mb": 20132.7,
+      "standard_peak_mb": "OOM",
+      "standard_ms": null,
+      "streamed_peak_mb": 1073.7,
+      "streamed_ms": 2769.1,
+      "maxdiff": "n/a (standard OOM)"
+    },
+    {
+      "N": 24576,
+      "scores_matrix_mb": 28991.0,
+      "standard_peak_mb": "OOM",
+      "standard_ms": null,
+      "streamed_peak_mb": 1298.6,
+      "streamed_ms": 3871.9,
+      "maxdiff": "n/a (standard OOM)"
+    }
+  ]
+}

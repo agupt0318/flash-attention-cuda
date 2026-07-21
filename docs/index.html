@@ -223,7 +223,63 @@ Peak memory for the three flash-style implementations stays between 0.02 and
       <code>torch.autograd.gradcheck</code>.</li>
 </ul>
 
-<h2>5. Existing solutions</h2>
+<h2>5. Measured on GPT-2</h2>
+<p>
+The T4 numbers above are for this repo's CUDA kernel. To measure the memory
+effect directly on a real model, the same streaming recurrence was written in
+plain PyTorch and run on GPT-2 small (12 heads, head dim 64) on an Apple
+M-series GPU with 24&nbsp;GB of unified memory
+(<a href="https://github.com/agupt0318/flash-attention-cuda/blob/main/pytorch/gpt2_memory.py">pytorch/gpt2_memory.py</a>).
+</p>
+<p>
+First, a correctness check: GPT-2's actual query/key/value activations were
+captured for a real 9-token prompt, and the streamed attention was compared
+with standard attention across all 12 layers. Worst-case difference:
+<b>4.77e-07</b> (fp32 rounding). It is an exact drop-in.
+</p>
+<p>
+Then peak attention memory was measured (with
+<code>torch.mps.current_allocated_memory()</code>) as the context length grows:
+</p>
+<div class="tablewrap">
+<table>
+  <caption>Peak memory of the attention step at GPT-2-small dimensions
+  (1 sequence, 12 heads, head dim 64, causal). Measured on the Apple GPU.</caption>
+  <thead>
+    <tr><th>context length</th><th>standard attention</th>
+        <th>streamed (this method)</th><th>reduction</th><th>outputs match</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>512</td><td class="num">12.8 MB</td><td class="num">14.2 MB</td><td class="num">&ndash;</td><td class="num">7.8e&minus;07</td></tr>
+    <tr><td>1,024</td><td class="num">51.4 MB</td><td class="num">53.7 MB</td><td class="num">&ndash;</td><td class="num">6.0e&minus;07</td></tr>
+    <tr><td>2,048</td><td class="num">205 MB</td><td class="num">108 MB</td><td class="num">1.9&times;</td><td class="num">5.4e&minus;07</td></tr>
+    <tr><td>4,096</td><td class="num">822 MB</td><td class="num">215 MB</td><td class="num">3.8&times;</td><td class="num">1.4e&minus;06</td></tr>
+    <tr><td>8,192</td><td class="num">3,288 MB</td><td class="num">430 MB</td><td class="num">7.6&times;</td><td class="num">1.0e&minus;06</td></tr>
+    <tr class="ours"><td>12,288</td><td class="num">7,399 MB</td><td class="num">644 MB</td><td class="num">11.5&times;</td><td class="num">1.4e&minus;06</td></tr>
+    <tr><td>16,384</td><td class="num">out of memory</td><td class="num">859 MB</td><td class="num">&ndash;</td><td class="num">&ndash;</td></tr>
+    <tr><td>20,480</td><td class="num">out of memory</td><td class="num">1,074 MB</td><td class="num">&ndash;</td><td class="num">&ndash;</td></tr>
+    <tr><td>24,576</td><td class="num">out of memory</td><td class="num">1,299 MB</td><td class="num">&ndash;</td><td class="num">&ndash;</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="chart">
+  <div class="title">Peak attention memory at 12,288 tokens</div>
+  <div class="axis">megabytes; GPT-2 small, 1 sequence, causal. The last length standard attention fits before it runs out of the 24 GB GPU.</div>
+  <div class="bars" id="chart-gpt2"></div>
+  <div class="note">Standard memory grows with the square of the context length
+  (the n&times;n score matrix); streamed grows linearly. At 16,384 tokens the
+  score matrix alone would need ~12.9&nbsp;GB and standard attention fails to
+  allocate, while streamed runs at under 1&nbsp;GB.</div>
+</div>
+<p>
+Two honest caveats. Below about 2,048 tokens there is no memory benefit, and
+the streamed version is slightly larger and slower here because of the Python
+tiling loop. And this PyTorch version is for measuring memory, not speed; the
+fused CUDA kernel in section 4 is what recovers the speed the loop gives up.
+</p>
+
+<h2>6. Existing solutions</h2>
 <div class="tablewrap">
 <table>
   <caption>Ways to compute (or avoid) the same attention</caption>
@@ -245,7 +301,7 @@ Peak memory for the three flash-style implementations stays between 0.02 and
 </table>
 </div>
 
-<h2>6. Why this exists</h2>
+<h2>7. Why this exists</h2>
 <p>
 This is an educational implementation. The goal was to understand IO-aware
 kernel design by building it: the CPU version proves the algorithm against a
@@ -365,6 +421,10 @@ or copied from the repository's T4 benchmark run (section 4).
     {label:"cuda (this repo)", v:0.13, text:"0.13 GiB", ours:true},
     {label:"torch SDPA",       v:0.13, text:"0.13 GiB"},
     {label:"naive",            v:4.13, text:"4.13 GiB"},
+  ]);
+  chart("chart-gpt2", [
+    {label:"standard",              v:7399, text:"7,399 MB"},
+    {label:"streamed (this method)", v:644,  text:"644 MB", ours:true},
   ]);
 
   // ---- live demo --------------------------------------------------------
